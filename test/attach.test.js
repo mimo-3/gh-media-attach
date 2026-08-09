@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, open, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attach, GitHubAttachError } from "../dist/index.js";
@@ -96,6 +96,32 @@ test("attach resolves the repository before uploading with the required request 
   assert.deepEqual(Buffer.from(upload.init.body), bytes);
 });
 
+test("attach uploads the opened file even if the path is replaced during repository lookup", async (t) => {
+  // Arrange
+  const directory = await temporaryDirectory(t);
+  const originalPath = join(directory, "original.mp4");
+  const replacementPath = join(directory, "replacement.mp4");
+  const filePath = join(directory, "clip.mp4");
+  const original = Buffer.from("original-video");
+  await writeFile(originalPath, original);
+  await writeFile(replacementPath, Buffer.from("replacement-secret"));
+  await symlink(originalPath, filePath);
+  const calls = mockFetchSequence(t, [
+    async () => {
+      await rm(filePath);
+      await symlink(replacementPath, filePath);
+      return jsonResponse({ id: 4242 }, 200);
+    },
+    jsonResponse({ url: ASSET_URL }, 201),
+  ]);
+
+  // Act
+  await attach(filePath, { repo: "owner/repo", token: AUTH_VALUE });
+
+  // Assert
+  assert.deepEqual(Buffer.from(calls[1].init.body), original);
+});
+
 for (const [label, body] of [
   ["null", null],
   ["an empty object", {}],
@@ -126,6 +152,26 @@ test("attach classifies a non-JSON 201 response as endpoint-changed", async (t) 
   await assert.rejects(
     attach(filePath, { repo: "owner/repo", token: AUTH_VALUE }),
     hasAttachError("endpoint-changed", 201),
+  );
+});
+
+test("attach sanitises control characters in response detail", async (t) => {
+  // Arrange
+  const { filePath } = await temporaryFile(t);
+  mockFetchSequence(t, [
+    jsonResponse({ id: 4242 }, 200),
+    jsonResponse({ url: "\u001b[31mforged\u202ereversed" }, 201),
+  ]);
+
+  // Act / Assert
+  await assert.rejects(
+    attach(filePath, { repo: "owner/repo", token: AUTH_VALUE }),
+    (error) => {
+      assert.ok(error instanceof GitHubAttachError);
+      assert.equal(error.kind, "endpoint-changed");
+      assert.doesNotMatch(error.detail, /[\u001b\u202e]/);
+      return true;
+    },
   );
 });
 
@@ -163,8 +209,6 @@ test("attach rejects a sparse file above 100 MiB before reading or uploading it"
   const handle = await open(filePath, "w");
   await handle.truncate(MAX_ATTACHMENT_BYTES + 1);
   await handle.close();
-  // A read-first implementation now fails with EACCES instead of allocating the file.
-  await chmod(filePath, 0o000);
   const fetch = t.mock.method(globalThis, "fetch", async () => assert.fail("fetch called"));
 
   // Act / Assert
