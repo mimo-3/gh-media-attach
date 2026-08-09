@@ -89,7 +89,14 @@ PR #1 の本文に `<video>` タグを置き、`Accept: application/vnd.github.h
 
 `endpoint-changed` は、レスポンスがJSONでないとき、または返ってきたURLが `user-attachments` の形式でないときに出る。ここを検証しないと、GitHubが別形式のURLを返し始めた日に「`<video>` が黙って剥がされて何も表示されない」という一番わかりにくい壊れ方をする。
 
+## GitHub Actionsの `GITHUB_TOKEN` では通らない
+
+canaryを実際に走らせて確認した（2026-08-09、run 31309534007）。`GET /repos/...` は成功して数値IDまで取れるのに、`uploads.github.com` へのPOSTだけが404を返す。ワークフローが自動で受け取るトークンでは、このエンドポイントに到達できない。
+
+CIから動画を添付したいなら、PATをsecretに入れる必要がある。canary自体も `CANARY_TOKEN` を読む形にして、未設定なら何もせず成功で抜けるようにした。設定されるまで毎晩赤くなると、本当に壊れた日に誰も見なくなる。
+
+404のメッセージにもこの事実を入れてある。一番ありがちな踏み方がこれなので。
+
 ## まだ確認できていないこと
 
 - fine-grained PAT で201が返るか
-- GitHub Actionsの `GITHUB_TOKEN`（`ghs_`）で通るか。nightlyのcanaryワークフローが毎晩答えを出す

@@ -103,8 +103,11 @@ A nightly [canary workflow](.github/workflows/canary.yml) uploads a 1px image ag
 | `<video>` with a release / raw / external URL | tag stripped |
 | `![](url)` with an MP4 | renders as `<img>`, no playback |
 | display name without an extension | 422 — GitHub matches the name's extension against the content type |
+| the Actions `GITHUB_TOKEN` | **404** — it cannot use this endpoint at all |
 
-Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs. The Actions `GITHUB_TOKEN` is answered nightly by the canary.
+Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs.
+
+The Actions token result matters for CI: a workflow that attaches a video needs a PAT in a secret, not the `GITHUB_TOKEN` it gets for free.
 
 ## License
 
