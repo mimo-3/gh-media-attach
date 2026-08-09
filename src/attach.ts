@@ -251,7 +251,8 @@ async function uploadFailure(response: Response, size: number): Promise<GitHubAt
 
   if (status === 404) {
     return fail(
-      `the upload endpoint answered 404. Either the repository id is wrong, or ` +
+      `the upload endpoint answered 404. The Actions GITHUB_TOKEN always gets a 404 here, ` +
+        `so use a personal access token; otherwise the repository id is wrong, or ` +
         `uploads.github.com/user-attachments/assets no longer exists. ${message}`,
       "not-found",
     );
