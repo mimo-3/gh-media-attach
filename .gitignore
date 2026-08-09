@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+
+.env
+.env.*
+.envrc
+
+.harness-output/
+~/
+
+.DS_Store
+*.log
