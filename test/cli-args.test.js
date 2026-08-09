@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseArguments } from "../dist/cli-args.js";
+import { parseArguments, USAGE } from "../dist/cli-args.js";
 
 test("reads a file and a repository", () => {
   const flags = parseArguments(["demo.mp4", "--repo", "owner/name"]);
@@ -21,6 +21,10 @@ test("rejects issue numbers that Number() would silently accept", () => {
   assert.throws(() => parseArguments(["a.mp4", "--issue", "0x10"]), /positive integer/);
   assert.throws(() => parseArguments(["a.mp4", "--issue", " 12 "]), /positive integer/);
   assert.throws(() => parseArguments(["a.mp4", "--issue", "-3"]), /positive integer/);
+  assert.throws(
+    () => parseArguments(["a.mp4", "--issue", String(Number.MAX_SAFE_INTEGER + 1)]),
+    /safe integer/,
+  );
 });
 
 test("refuses combinations that would silently drop an intent", () => {
@@ -36,6 +40,32 @@ test("an empty positional argument still counts as the file", () => {
 test("a flag with no value is an error, not a silent undefined", () => {
   assert.throws(() => parseArguments(["a.mp4", "--repo"]), /needs a value/);
   assert.throws(() => parseArguments(["a.mp4", "--name"]), /needs a value/);
+});
+
+test("a value-taking option does not swallow the next flag", () => {
+  for (const option of ["--repo", "--issue", "--pr", "--content-type", "--name"]) {
+    assert.throws(() => parseArguments(["a.mp4", option, "--url"]), /needs a value/);
+  }
+});
+
+test("singleton options reject duplicates instead of silently overwriting intent", () => {
+  assert.throws(
+    () => parseArguments(["a.mp4", "--repo", "first/repo", "--repo", "second/repo"]),
+    /once|duplicate/,
+  );
+  assert.throws(
+    () => parseArguments(["a.mp4", "--name", "first.mp4", "--name", "second.mp4"]),
+    /once|duplicate/,
+  );
+  assert.throws(() => parseArguments(["a.mp4", "--url", "--url"]), /once|duplicate/);
+});
+
+test("--token is rejected because credentials must not be passed through argv", () => {
+  assert.throws(
+    () => parseArguments(["a.mp4", "--token", "fixture-value"]),
+    /unknown option|no longer supported/,
+  );
+  assert.doesNotMatch(USAGE, /--token/);
 });
 
 test("unknown options are rejected", () => {

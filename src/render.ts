@@ -1,4 +1,6 @@
-import { isVideo } from "./mime.js";
+import { GitHubAttachError, sanitizeTerminalText, wrapFailure } from "./errors.js";
+import { isVideo, validateContentType } from "./mime.js";
+import { isGitHubAssetUrl } from "./attach.js";
 import type { Asset } from "./attach.js";
 
 /**
@@ -11,10 +13,31 @@ import type { Asset } from "./attach.js";
  * the whole tag stripped by the sanitizer.
  */
 export function toMarkdown(asset: Asset): string {
-  if (isVideo(asset.contentType)) {
-    return `<video src="${escapeAttribute(asset.url)}" controls></video>`;
+  try {
+    if (typeof asset !== "object" || asset === null || Array.isArray(asset)) {
+      throw new GitHubAttachError("asset must be an object", "invalid-input");
+    }
+    if (typeof asset.url !== "string" || !isGitHubAssetUrl(asset.url)) {
+      throw new GitHubAttachError(
+        "asset URL must be a GitHub user-attachments URL",
+        "invalid-input",
+      );
+    }
+    if (typeof asset.name !== "string") {
+      throw new GitHubAttachError("asset name must be a string", "invalid-input");
+    }
+    if (typeof asset.contentType !== "string") {
+      throw new GitHubAttachError("asset content type must be a string", "invalid-input");
+    }
+
+    const contentType = validateContentType(asset.contentType);
+    if (isVideo(contentType)) {
+      return `<video src="${escapeAttribute(asset.url)}" controls></video>`;
+    }
+    return `![${escapeAltText(asset.name)}](${asset.url})`;
+  } catch (error) {
+    throw wrapFailure(error, "could not render the attachment", "invalid-input");
   }
-  return `![${escapeAltText(asset.name)}](${asset.url})`;
 }
 
 /**
@@ -31,8 +54,7 @@ function escapeAttribute(url: string): string {
  * character class that includes it.
  */
 function escapeAltText(name: string): string {
-  return name
+  return sanitizeTerminalText(name)
     .replace(/[\\[\]]/g, "\\$&")
-    .replace(/\s+/g, " ")
     .trim();
 }

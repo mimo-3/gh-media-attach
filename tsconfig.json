@@ -12,8 +12,8 @@
     "noImplicitReturns": true,
     "verbatimModuleSyntax": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    "declarationMap": false,
+    "sourceMap": false,
     "outDir": "dist",
     "rootDir": "src",
     "skipLibCheck": true

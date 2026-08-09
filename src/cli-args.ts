@@ -4,7 +4,6 @@ export type Flags = {
   issue: number | undefined;
   contentType: string | undefined;
   name: string | undefined;
-  token: string | undefined;
   urlOnly: boolean;
   help: boolean;
 };
@@ -16,10 +15,9 @@ export const USAGE = `gh-video-attach <file> --repo owner/name [options]
   --pr N               Post the attachment as a comment on pull request N
   --content-type TYPE  Override the type guessed from the extension
   --name NAME          Override the file name shown on GitHub
-  --token TOKEN        Defaults to GH_TOKEN, GITHUB_TOKEN, then \`gh auth token\`
   --url                Print only the asset URL, not the markdown
 
-Prefer GITHUB_TOKEN over --token: arguments are visible to other users in \`ps\`.
+Tokens come from GH_TOKEN, GITHUB_TOKEN, then \`gh auth token\`.
 `;
 
 /**
@@ -33,23 +31,32 @@ export function parseArguments(argv: string[]): Flags {
     issue: undefined,
     contentType: undefined,
     name: undefined,
-    token: undefined,
     urlOnly: false,
     help: false,
   };
+  const seen = new Set<string>();
 
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
     if (argument === undefined) continue;
 
-    const value = (): string => {
+    const value = (allowNegativeNumber = false): string => {
       const next = argv[++index];
-      if (next === undefined) throw new Error(`${argument} needs a value`);
+      const isNegativeNumber = allowNegativeNumber && next !== undefined && /^-\d/.test(next);
+      if (next === undefined || (next.startsWith("-") && !isNegativeNumber)) {
+        throw new Error(`${argument} needs a value`);
+      }
       return next;
+    };
+
+    const once = (key: string): void => {
+      if (seen.has(key)) throw new Error(`${argument} may only be given once`);
+      seen.add(key);
     };
 
     switch (argument) {
       case "--repo":
+        once("repo");
         flags.repo = value();
         break;
       case "--issue":
@@ -57,27 +64,32 @@ export function parseArguments(argv: string[]): Flags {
         if (flags.issue !== undefined) {
           throw new Error("give --issue or --pr once, not both");
         }
-        const raw = value();
+        const raw = value(true);
         if (!/^[1-9]\d*$/.test(raw)) {
           throw new Error(`${argument} needs a positive integer, got "${raw}"`);
         }
-        flags.issue = Number(raw);
+        const issue = Number(raw);
+        if (!Number.isSafeInteger(issue)) {
+          throw new Error(`${argument} needs a safe integer, got "${raw}"`);
+        }
+        flags.issue = issue;
         break;
       }
       case "--content-type":
+        once("content-type");
         flags.contentType = value();
         break;
       case "--name":
+        once("name");
         flags.name = value();
         break;
-      case "--token":
-        flags.token = value();
-        break;
       case "--url":
+        once("url");
         flags.urlOnly = true;
         break;
       case "-h":
       case "--help":
+        once("help");
         flags.help = true;
         break;
       default:

@@ -1,3 +1,5 @@
+import { GitHubAttachError, sanitizeTerminalText } from "./errors.js";
+
 const BY_EXTENSION: Record<string, string> = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -8,8 +10,9 @@ const BY_EXTENSION: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
-  ".svg": "image/svg+xml",
 };
+
+const SUPPORTED_CONTENT_TYPES = new Set(Object.values(BY_EXTENSION));
 
 /**
  * GitHub decides how to render an attachment from the content type we declare
@@ -17,15 +20,36 @@ const BY_EXTENSION: Record<string, string> = {
  * Unknown extensions are rejected rather than sent as octet-stream.
  */
 export function guessContentType(fileName: string): string {
+  if (typeof fileName !== "string") {
+    throw new GitHubAttachError("file name must be a string", "invalid-input");
+  }
   const dot = fileName.lastIndexOf(".");
   const extension = dot === -1 ? "" : fileName.slice(dot).toLowerCase();
   const contentType = BY_EXTENSION[extension];
   if (!contentType) {
-    throw new Error(
-      `cannot tell the content type of "${fileName}". Pass one explicitly with --content-type.`,
+    throw new GitHubAttachError(
+      `cannot tell the content type of "${sanitizeTerminalText(fileName)}". ` +
+        `Pass one explicitly with --content-type.`,
+      "invalid-input",
     );
   }
   return contentType;
+}
+
+/** Reject types that GitHub will not render as one of this package's supported assets. */
+export function validateContentType(contentType: string): string {
+  if (typeof contentType !== "string") {
+    throw new GitHubAttachError("content type must be a string", "invalid-input");
+  }
+  const normalised = contentType.trim().toLowerCase();
+  if (!SUPPORTED_CONTENT_TYPES.has(normalised)) {
+    throw new GitHubAttachError(
+      `unsupported content type "${sanitizeTerminalText(contentType)}". ` +
+        `Use a supported image or video type.`,
+      "invalid-input",
+    );
+  }
+  return normalised;
 }
 
 export function isVideo(contentType: string): boolean {
@@ -39,6 +63,10 @@ export function isVideo(contentType: string): boolean {
  * label, not for a different format.
  */
 export function ensureExtension(name: string, filePath: string): string {
+  if (name.trim() === "") {
+    throw new GitHubAttachError("attachment name must not be empty", "invalid-input");
+  }
+
   const hasExtension = /\.[A-Za-z0-9]+$/.test(name);
   if (hasExtension) return name;
 

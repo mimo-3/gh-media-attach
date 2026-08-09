@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { toMarkdown } from "../dist/render.js";
+import { GitHubAttachError, toMarkdown } from "../dist/index.js";
 
 const asset = (overrides) => ({
   url: "https://github.com/user-attachments/assets/9a34c7bd-6b09-430a-a1f4-335bf67e4a34",
@@ -40,8 +40,32 @@ test("newlines in the name cannot split the markdown", () => {
   assert.equal(markdown.split("\n").length, 1);
 });
 
-test("a quote in the url cannot escape the video tag attribute", () => {
-  const markdown = toMarkdown(asset({ url: 'https://example.com/x" onerror="alert(1)' }));
-  assert.doesNotMatch(markdown, /onerror="/);
-  assert.match(markdown, /&quot;/);
+test("a non-GitHub video URL is rejected before it can escape the tag", () => {
+  assert.throws(
+    () => toMarkdown(asset({ url: 'https://example.com/x" onerror="alert(1)' })),
+    (error) => error instanceof GitHubAttachError && error.kind === "invalid-input",
+  );
+});
+
+test("an image URL containing a newline cannot inject Markdown", () => {
+  assert.throws(
+    () =>
+      toMarkdown(
+        asset({
+          contentType: "image/png",
+          name: "chart.png",
+          url:
+            "https://github.com/user-attachments/assets/9a34c7bd-6b09-430a-a1f4-335bf67e4a34)\n" +
+            "[forged](https://example.com)",
+        }),
+      ),
+    (error) => error instanceof GitHubAttachError && error.kind === "invalid-input",
+  );
+});
+
+test("an unsupported content type is rejected instead of rendered as an image", () => {
+  assert.throws(
+    () => toMarkdown(asset({ contentType: "application/pdf", name: "notes.pdf" })),
+    (error) => error instanceof GitHubAttachError && error.kind === "invalid-input",
+  );
 });

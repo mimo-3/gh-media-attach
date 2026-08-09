@@ -3,6 +3,9 @@ import { attach, comment } from "./attach.js";
 import { parseArguments, USAGE } from "./cli-args.js";
 import { toMarkdown } from "./render.js";
 import { resolveToken } from "./token.js";
+import { sanitizeTerminalText } from "./errors.js";
+
+const NETWORK_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function main(): Promise<void> {
   const flags = parseArguments(process.argv.slice(2));
@@ -18,10 +21,12 @@ async function main(): Promise<void> {
     return;
   }
 
-  const token = resolveToken(flags.token);
+  const token = resolveToken();
+  const signal = AbortSignal.timeout(NETWORK_TIMEOUT_MS);
   const asset = await attach(flags.file, {
     repo: flags.repo,
     token,
+    signal,
     ...(flags.name !== undefined ? { name: flags.name } : {}),
     ...(flags.contentType !== undefined ? { contentType: flags.contentType } : {}),
   });
@@ -35,6 +40,7 @@ async function main(): Promise<void> {
         issue: flags.issue,
         body: markdown,
         token,
+        signal,
       });
       process.stdout.write(`${commentUrl}\n`);
     } catch (error) {
@@ -50,6 +56,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`${sanitizeTerminalText(message)}\n`);
   process.exitCode = 1;
 });

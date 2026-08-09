@@ -1,3 +1,5 @@
+import { GitHubAttachError, sanitizeTerminalText } from "./errors.js";
+
 /**
  * GitHub owners and repository names only ever use these characters, so
  * anything else is a mistake worth catching before it reaches a URL.
@@ -12,7 +14,10 @@ export function splitRepo(repo: string): { owner: string; name: string } {
   const name = parts[1];
 
   if (parts.length !== 2 || !isSegment(owner) || !isSegment(name)) {
-    throw new Error(`repo must look like "owner/name", got "${repo}"`);
+    throw new GitHubAttachError(
+      `repo must look like "owner/name", got "${sanitizeTerminalText(repo)}"`,
+      "invalid-input",
+    );
   }
 
   return { owner, name };
