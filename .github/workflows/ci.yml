@@ -10,12 +10,41 @@ permissions:
 
 jobs:
   verify:
+    name: Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
       - run: npm run verify
+
+  package:
+    name: npm package
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Pack and smoke test
+        run: |
+          npm pack --silent --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
+          tarball_name="$(node --print "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/pack.json")"
+          mkdir "$RUNNER_TEMP/smoke"
+          cd "$RUNNER_TEMP/smoke"
+          npm init --yes
+          npm install "$RUNNER_TEMP/$tarball_name"
+          node --input-type=module --eval "import('gh-video-attach').then((module) => { if (typeof module.attach !== 'function') process.exit(1) })"
+          ./node_modules/.bin/gh-video-attach --help
