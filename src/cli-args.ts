@@ -17,7 +17,7 @@ export const USAGE = `gh-video-attach <file> --repo owner/name [options]
   --name NAME          Override the file name shown on GitHub
   --url                Print only the asset URL, not the markdown
 
-Tokens come from GH_TOKEN, GITHUB_TOKEN, then \`gh auth token\`.
+Tokens come from GH_TOKEN or GITHUB_TOKEN.
 `;
 
 /**
