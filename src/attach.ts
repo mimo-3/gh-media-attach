@@ -1,18 +1,21 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import type { Stats } from "node:fs";
 import { basename } from "node:path";
-import { ensureExtension, guessContentType } from "./mime.js";
+import { ensureExtension, guessContentType, validateContentType } from "./mime.js";
 import { splitRepo } from "./repo.js";
-import { GitHubAttachError } from "./errors.js";
+import {
+  GitHubAttachError,
+  isAbortFailure,
+  sanitizeTerminalText,
+  wrapFailure,
+} from "./errors.js";
 import type { AttachFailureKind } from "./errors.js";
 
 const UPLOAD_ORIGIN = "https://uploads.github.com";
 const API_ORIGIN = "https://api.github.com";
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
-/**
- * The only URL shape GitHub renders as an inline player. Checking it is how we
- * notice the unofficial endpoint changing, instead of handing back a URL that
- * silently renders as nothing.
- */
+/** The only URL shape GitHub currently renders as an inline attachment. */
 const ASSET_URL =
   /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,8 +35,6 @@ export type AttachOptions = {
   name?: string;
   /** Overrides the content type guessed from the file's extension. */
   contentType?: string;
-  /** Skips the `GET /repos/...` lookup when you already know the numeric id. */
-  repositoryId?: number;
   signal?: AbortSignal;
 };
 
@@ -52,48 +53,84 @@ export type CommentOptions = {
  * Uploads a file and returns the attachment URL GitHub renders inline.
  *
  * This calls `uploads.github.com`, which GitHub does not document or support.
- * It works with a plain PAT today; a sudden failure is more likely the endpoint
- * moving than a bug in the caller, and {@link GitHubAttachError.kind} says
- * which.
+ * Every failure crossing this public boundary is a {@link GitHubAttachError}.
  */
 export async function attach(filePath: string, options: AttachOptions): Promise<Asset> {
-  const bytes = await readFile(filePath);
-  const name = ensureExtension(options.name ?? basename(filePath), filePath);
-  const contentType = options.contentType ?? guessContentType(filePath);
-  const repositoryId =
-    options.repositoryId ??
-    (await resolveRepositoryId(options.repo, options.token, options.signal));
+  try {
+    return await attachFile(filePath, options);
+  } catch (error) {
+    if (isAbortFailure(error) || options?.signal?.aborted) {
+      throw wrapFailure(error, "attachment upload was aborted", "aborted");
+    }
+    throw wrapFailure(error, "could not attach the file", "unknown");
+  }
+}
+
+async function attachFile(filePath: string, options: AttachOptions): Promise<Asset> {
+  if (typeof filePath !== "string" || filePath.trim() === "") {
+    throw new GitHubAttachError("file path must not be empty", "invalid-input");
+  }
+  if (!isRecord(options)) {
+    throw new GitHubAttachError("attach options are required", "invalid-input");
+  }
+  if (typeof options.repo !== "string") {
+    throw new GitHubAttachError("repo must be an owner/name string", "invalid-input");
+  }
+
+  splitRepo(options.repo);
+  const token = requireToken(options.token);
+  const fileInfo = await fileMetadata(filePath);
+  if (!fileInfo.isFile()) {
+    throw new GitHubAttachError(`"${sanitizeTerminalText(filePath)}" is not a regular file`, "file");
+  }
+  rejectOversized(fileInfo.size);
+
+  const contentType = validateContentType(
+    options.contentType === undefined
+      ? guessContentType(filePath)
+      : requireString(options.contentType, "content type"),
+  );
+  const displayName = options.name === undefined ? basename(filePath) : requireString(options.name, "name");
+  const name = ensureExtension(displayName, filePath);
+
+  // Always resolve from owner/name so the id cannot disagree with the public target.
+  const repositoryId = await resolveRepositoryId(options.repo, token, options.signal);
+  const bytes = await fileBytes(filePath);
+  rejectOversized(bytes.byteLength);
 
   const query = new URLSearchParams({
     name,
     content_type: contentType,
     repository_id: String(repositoryId),
   });
-
-  const response = await fetch(`${UPLOAD_ORIGIN}/user-attachments/assets?${query}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${options.token}`,
-      Accept: "application/json",
-      "Content-Type": contentType,
+  const response = await githubFetch(
+    `${UPLOAD_ORIGIN}/user-attachments/assets?${query}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": contentType,
+      },
+      body: bytes,
+      signal: options.signal ?? null,
     },
-    body: bytes,
-    signal: options.signal ?? null,
-  });
+    options.signal,
+    "upload the attachment",
+  );
 
   if (!response.ok) {
-    throw await uploadFailure(response, bytes.byteLength);
+    throw await responseFailure(response, "upload", bytes.byteLength, options.signal);
   }
 
-  const body = await readJson<{ url?: unknown }>(response, "the upload endpoint");
-
-  if (typeof body.url !== "string" || !ASSET_URL.test(body.url)) {
+  const body = await readJson(response, "the upload endpoint", options.signal);
+  if (!isRecord(body) || typeof body.url !== "string" || !isGitHubAssetUrl(body.url)) {
     throw new GitHubAttachError(
       `the upload succeeded but returned a URL this library does not recognise. ` +
         `GitHub would not render it as a player, so uploads.github.com has probably changed.`,
       "endpoint-changed",
       response.status,
-      JSON.stringify(body.url).slice(0, 200),
+      safeDetail(body),
     );
   }
 
@@ -102,44 +139,74 @@ export async function attach(filePath: string, options: AttachOptions): Promise<
 
 /** Posts a comment on an issue or a pull request, and returns its URL. */
 export async function comment(options: CommentOptions): Promise<string> {
-  const { owner, name } = splitRepo(options.repo);
+  try {
+    return await postComment(options);
+  } catch (error) {
+    if (isAbortFailure(error) || options?.signal?.aborted) {
+      throw wrapFailure(error, "comment creation was aborted", "aborted");
+    }
+    throw wrapFailure(error, "could not create the comment", "unknown");
+  }
+}
 
-  if (!Number.isInteger(options.issue) || options.issue <= 0) {
-    throw new Error(`issue must be a positive integer, got ${options.issue}`);
+async function postComment(options: CommentOptions): Promise<string> {
+  if (!isRecord(options)) {
+    throw new GitHubAttachError("comment options are required", "invalid-input");
+  }
+  if (typeof options.repo !== "string") {
+    throw new GitHubAttachError("repo must be an owner/name string", "invalid-input");
+  }
+  const { owner, name } = splitRepo(options.repo);
+  const token = requireToken(options.token);
+
+  if (!Number.isSafeInteger(options.issue) || options.issue <= 0) {
+    throw new GitHubAttachError(
+      `issue must be a positive safe integer, got ${String(options.issue)}`,
+      "invalid-input",
+    );
+  }
+  if (typeof options.body !== "string") {
+    throw new GitHubAttachError("comment body must be a string", "invalid-input");
   }
 
-  const response = await fetch(
+  const response = await githubFetch(
     `${API_ORIGIN}/repos/${owner}/${name}/issues/${options.issue}/comments`,
     {
       method: "POST",
       headers: {
-        ...apiHeaders(options.token),
+        ...apiHeaders(token),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ body: options.body }),
       signal: options.signal ?? null,
     },
+    options.signal,
+    "create the comment",
   );
 
   if (!response.ok) {
-    const detail = stripHtml(await response.text());
-    throw new GitHubAttachError(
-      `could not comment on ${options.repo}#${options.issue} (HTTP ${response.status}). ${detail}`,
-      response.status === 401 || response.status === 403 ? "auth" : "unknown",
-      response.status,
-      detail,
-    );
+    throw await responseFailure(response, "comment", undefined, options.signal);
   }
 
-  const created = await readJson<{ html_url?: unknown }>(response, "the comments API");
-  if (typeof created.html_url !== "string") {
+  const created = await readJson(response, "the comments API", options.signal);
+  if (
+    !isRecord(created) ||
+    typeof created.html_url !== "string" ||
+    !isSafeGitHubWebUrl(created.html_url)
+  ) {
     throw new GitHubAttachError(
       "the comment was created but GitHub returned no URL for it.",
       "endpoint-changed",
       response.status,
+      safeDetail(created),
     );
   }
   return created.html_url;
+}
+
+/** Used by the renderer as a second trust boundary for caller-built Assets. */
+export function isGitHubAssetUrl(url: string): boolean {
+  return ASSET_URL.test(url);
 }
 
 /** The upload endpoint wants the numeric repository id, not the GraphQL node id. */
@@ -149,29 +216,27 @@ async function resolveRepositoryId(
   signal: AbortSignal | undefined,
 ): Promise<number> {
   const { owner, name } = splitRepo(repo);
-
-  const response = await fetch(`${API_ORIGIN}/repos/${owner}/${name}`, {
-    headers: apiHeaders(token),
-    signal: signal ?? null,
-  });
+  const response = await githubFetch(
+    `${API_ORIGIN}/repos/${owner}/${name}`,
+    { headers: apiHeaders(token), signal: signal ?? null },
+    signal,
+    `read ${repo}`,
+  );
 
   if (!response.ok) {
-    throw new GitHubAttachError(
-      `cannot read ${repo} (HTTP ${response.status}). Check that the token has access to it.`,
-      response.status === 404 ? "not-found" : "auth",
-      response.status,
-    );
+    throw await responseFailure(response, "repository", undefined, signal);
   }
 
-  const body = await readJson<{ id?: unknown }>(response, `GET /repos/${owner}/${name}`);
-  if (typeof body.id !== "number") {
+  const body = await readJson(response, `GET /repos/${owner}/${name}`, signal);
+  if (!isRecord(body) || !Number.isSafeInteger(body.id) || (body.id as number) <= 0) {
     throw new GitHubAttachError(
-      `GitHub returned no numeric id for ${repo}.`,
+      `GitHub returned no positive numeric id for ${repo}.`,
       "endpoint-changed",
       response.status,
+      safeDetail(body),
     );
   }
-  return body.id;
+  return body.id as number;
 }
 
 function apiHeaders(token: string): Record<string, string> {
@@ -182,94 +247,253 @@ function apiHeaders(token: string): Record<string, string> {
   };
 }
 
-/**
- * A non-JSON body from an endpoint that always returned JSON is worth naming,
- * rather than letting a raw `SyntaxError` reach the caller.
- */
-async function readJson<T>(response: Response, what: string): Promise<T> {
-  const text = await response.text();
+async function githubFetch(
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal | undefined,
+  action: string,
+): Promise<Response> {
   try {
-    return JSON.parse(text) as T;
-  } catch {
+    return await fetch(url, init);
+  } catch (error) {
+    if (isAbortFailure(error) || signal?.aborted) {
+      throw wrapFailure(error, `${action} was aborted`, "aborted");
+    }
+    throw wrapFailure(error, `could not ${action} because the network request failed`, "network");
+  }
+}
+
+async function readJson(
+  response: Response,
+  what: string,
+  signal: AbortSignal | undefined,
+): Promise<unknown> {
+  const text = await readResponseText(response, signal);
+  try {
+    return JSON.parse(text) as unknown;
+  } catch (cause) {
     throw new GitHubAttachError(
       `${what} answered HTTP ${response.status} with a body that is not JSON. ` +
         `The endpoint has probably changed.`,
       "endpoint-changed",
       response.status,
       stripHtml(text),
+      cause,
     );
   }
 }
 
+type Operation = "repository" | "upload" | "comment";
 type UploadError = { message: string; field?: string };
 
-/** Error bodies use GitHub's REST shape, and carry HTML meant for the web editor. */
+async function responseFailure(
+  response: Response,
+  operation: Operation,
+  size: number | undefined,
+  signal: AbortSignal | undefined,
+): Promise<GitHubAttachError> {
+  const raw = await readResponseText(response, signal);
+  const uploadError = readUploadError(raw);
+  const detail = operation === "upload" ? uploadError.message : readApiError(raw);
+  const status = response.status;
+  const kind = classifyResponse(response, operation, uploadError.field, detail);
+  const label = operation === "repository" ? "repository lookup" : operation;
+  const fail = (message: string): GitHubAttachError =>
+    new GitHubAttachError(message, kind, status, detail);
+
+  if (kind === "rate-limit") {
+    return fail(`GitHub rate limited the ${label} (HTTP ${status}).${rateLimitReset(response)}`);
+  }
+  if (kind === "auth") {
+    return fail(`GitHub rejected the token or its permissions for the ${label} (HTTP ${status}). ${detail}`);
+  }
+  if (kind === "upload-unavailable") {
+    return fail(
+      `the private upload endpoint is unavailable (HTTP 404). The automatic Actions ` +
+        `GITHUB_TOKEN is unsupported here; otherwise GitHub may have changed the endpoint. ${detail}`,
+    );
+  }
+  if (kind === "not-found") {
+    return fail(`the target for the ${label} was not found (HTTP 404). ${detail}`);
+  }
+  if (kind === "too-large") {
+    const measured = size === undefined ? "" : ` at ${formatMegabytes(size)} MB`;
+    return fail(`file too large${measured}. GitHub caps attachments at 100 MB (HTTP ${status}).`);
+  }
+  if (kind === "invalid-input") {
+    return fail(`GitHub refused the ${label} as invalid (HTTP 422). ${detail}`);
+  }
+  if (kind === "server") {
+    return fail(`GitHub could not complete the ${label} (HTTP ${status}). ${detail}`);
+  }
+  return fail(`${label} failed (HTTP ${status}). ${detail}`);
+}
+
+function classifyResponse(
+  response: Response,
+  operation: Operation,
+  uploadField: string | undefined,
+  detail: string,
+): AttachFailureKind {
+  const status = response.status;
+  if (
+    status === 429 ||
+    response.headers.get("x-ratelimit-remaining") === "0" ||
+    (status === 403 && /(?:rate limit|abuse detection)/i.test(detail))
+  ) {
+    return "rate-limit";
+  }
+  if (status === 401 || status === 403) return "auth";
+  if (status === 404) return operation === "upload" ? "upload-unavailable" : "not-found";
+  if (status === 413 || (status === 422 && uploadField === "size")) return "too-large";
+  if (status === 422) return "invalid-input";
+  if (status >= 500 && status <= 599) return "server";
+  return "unknown";
+}
+
+/** Error bodies use GitHub's REST shape and may contain HTML for the web editor. */
 function readUploadError(raw: string): UploadError {
   try {
-    const body = JSON.parse(raw) as {
-      message?: string;
-      errors?: { field?: string; message?: string }[];
-    };
-    const first = body.errors?.[0];
-    const message = stripHtml(first?.message ?? body.message ?? raw);
-    return first?.field !== undefined ? { message, field: first.field } : { message };
+    const body = JSON.parse(raw) as unknown;
+    if (!isRecord(body)) return { message: stripHtml(raw) };
+    const errors = Array.isArray(body.errors) ? body.errors : [];
+    const first = errors[0];
+    const field = isRecord(first) && typeof first.field === "string" ? first.field : undefined;
+    const firstMessage = isRecord(first) && typeof first.message === "string" ? first.message : undefined;
+    const bodyMessage = typeof body.message === "string" ? body.message : undefined;
+    const message = stripHtml(firstMessage ?? bodyMessage ?? raw);
+    return field === undefined ? { message } : { message, field };
   } catch {
     return { message: stripHtml(raw) };
   }
 }
 
-function stripHtml(text: string): string {
-  return text
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 300);
+function readApiError(raw: string): string {
+  try {
+    const body = JSON.parse(raw) as unknown;
+    if (isRecord(body) && typeof body.message === "string") return stripHtml(body.message);
+  } catch {
+    // Plain text and HTML error bodies are still useful once neutralised.
+  }
+  return stripHtml(raw);
 }
 
-async function uploadFailure(response: Response, size: number): Promise<GitHubAttachError> {
-  const { message, field } = readUploadError(await response.text());
-  const status = response.status;
-  const megabytes = (size / 1024 / 1024).toFixed(1);
-  const fail = (text: string, kind: AttachFailureKind): GitHubAttachError =>
-    new GitHubAttachError(text, kind, status, message);
-
-  if (status === 401) {
-    return fail(`the token was rejected (HTTP 401). ${message}`, "auth");
-  }
-
-  if (status === 403) {
-    if (response.headers.get("x-ratelimit-remaining") === "0") {
-      const reset = response.headers.get("x-ratelimit-reset");
-      const at = reset ? ` Resets at ${new Date(Number(reset) * 1000).toISOString()}.` : "";
-      return fail(`GitHub rate limited the upload (HTTP 403).${at}`, "rate-limit");
+async function readResponseText(
+  response: Response,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  try {
+    return await response.text();
+  } catch (error) {
+    const detail = sanitizeTerminalText(
+      error instanceof Error ? error.message : safeDetail(error),
+    ).slice(0, 300);
+    if (isAbortFailure(error) || signal?.aborted) {
+      throw new GitHubAttachError(
+        "reading the GitHub response was aborted",
+        "aborted",
+        response.status,
+        detail,
+        error,
+      );
     }
-    return fail(
-      `upload rejected (HTTP 403). The token needs the "repo" scope and write access to this repository. ${message}`,
-      "auth",
+    throw new GitHubAttachError(
+      "could not read the GitHub response",
+      "network",
+      response.status,
+      detail,
+      error,
     );
   }
+}
 
-  if (status === 404) {
-    return fail(
-      `the upload endpoint answered 404. The Actions GITHUB_TOKEN always gets a 404 here, ` +
-        `so use a personal access token; otherwise the repository id is wrong, or ` +
-        `uploads.github.com/user-attachments/assets no longer exists. ${message}`,
-      "not-found",
+async function fileMetadata(filePath: string): Promise<Stats> {
+  try {
+    return await stat(filePath);
+  } catch (error) {
+    throw wrapFailure(
+      error,
+      `could not inspect file "${sanitizeTerminalText(filePath)}"`,
+      "file",
     );
   }
+}
 
-  // Oversized uploads come back as 422 with a "size" field, not as 413.
-  if (status === 422 && field === "size") {
-    return fail(`file too large at ${megabytes} MB. GitHub caps attachments at 100 MB.`, "too-large");
+async function fileBytes(filePath: string): Promise<Buffer> {
+  try {
+    return await readFile(filePath);
+  } catch (error) {
+    throw wrapFailure(error, `could not read file "${sanitizeTerminalText(filePath)}"`, "file");
   }
+}
 
-  if (status === 413) {
-    return fail(`file too large at ${megabytes} MB (HTTP 413). ${message}`, "too-large");
+function rejectOversized(size: number): void {
+  if (size > MAX_ATTACHMENT_BYTES) {
+    throw new GitHubAttachError(
+      `file too large at ${formatMegabytes(size)} MB. GitHub caps attachments at 100 MB.`,
+      "too-large",
+    );
   }
+}
 
-  if (status === 422) {
-    return fail(`GitHub refused the upload (HTTP 422). ${message}`, "unknown");
+function requireToken(token: unknown): string {
+  if (typeof token !== "string" || token.trim() === "") {
+    throw new GitHubAttachError("token must not be empty", "invalid-input");
   }
+  const trimmed = token.trim();
+  if (/\s/.test(trimmed)) {
+    throw new GitHubAttachError("token must not contain whitespace", "invalid-input");
+  }
+  return trimmed;
+}
 
-  return fail(`upload failed (HTTP ${status}). ${message}`, "unknown");
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new GitHubAttachError(`${label} must be a string`, "invalid-input");
+  }
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeDetail(value: unknown): string {
+  try {
+    const serialised = JSON.stringify(value);
+    return (serialised ?? String(value)).slice(0, 300);
+  } catch {
+    return "unserialisable response";
+  }
+}
+
+function stripHtml(text: string): string {
+  return sanitizeTerminalText(text.replace(/<[^>]*>/g, " ")).slice(0, 300);
+}
+
+function isSafeGitHubWebUrl(value: string): boolean {
+  if (sanitizeTerminalText(value) !== value) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.hostname === "github.com" &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+function rateLimitReset(response: Response): string {
+  const raw = response.headers.get("x-ratelimit-reset");
+  if (raw === null) return "";
+  const milliseconds = Number(raw) * 1000;
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0 || milliseconds > 8.64e15) return "";
+  return ` Resets at ${new Date(milliseconds).toISOString()}.`;
+}
+
+function formatMegabytes(size: number): string {
+  return (size / 1024 / 1024).toFixed(1);
 }
