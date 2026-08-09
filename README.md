@@ -70,11 +70,13 @@ An MCP server (`attach_media`, `attach_and_comment`) is the next thing to build,
 | MP4 upload, public repo | 201 |
 | MP4 upload, private repo | 201 |
 | Auth via `gh auth token` (`gho_`, scope `repo`) | works |
-| `<video>` with a `user-attachments` URL | renders a player |
+| 12 MB video | 201 — the 10 MB free-plan cap does not apply here |
+| 124 MB video | 422 with `errors[0].field = "size"`, not 413 |
+| `<video>` with a `user-attachments` URL | renders a player, in a real PR body |
 | `<video>` with a release / raw / external URL | tag stripped |
 | `![](url)` with an MP4 | renders as `<img>`, no playback |
 
-Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs, the Actions `GITHUB_TOKEN`, and real size limits.
+Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs and the Actions `GITHUB_TOKEN`.
 
 ## License
 
