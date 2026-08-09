@@ -48,8 +48,8 @@ cli      gh-video-attach <file> --repo owner/name [--issue N | --pr N]
 callerが `repositoryId` を指定する入口は持たない。`repo` から毎回GitHub APIで
 numeric IDを取得し、コメント先とアップロード先が食い違う状態を防ぐ。
 
-トークンは、ライブラリの明示引数、`GH_TOKEN`、`GITHUB_TOKEN`、
-`gh auth token` の順に解決する。CLIにはtokenを値として渡すoptionを置かない。
+トークンは、ライブラリの明示引数、`GH_TOKEN`、`GITHUB_TOKEN`の順に解決する。
+PATH上のhelper programは自動実行しない。CLIにはtokenを値として渡すoptionを置かない。
 command line argumentは同じ端末の別processから見えるためだ。
 
 ## ファイルとMarkdownの境界
@@ -91,16 +91,16 @@ status、HTMLを除去したdetail、元の `cause` は可能な範囲で保持�
 ## 認証とCIの境界
 
 トークンはGitHub APIへのrequestにだけ使い、保存・log出力しない。
-CLIの `gh auth token` fallbackにはtimeoutを設ける。
 
 CIでuploadする場合、自動発行の `GITHUB_TOKEN` は使えない。専用bot accountを作り、
 対象repositoryだけへアクセスさせ、そのbotのPATをsecretとして `GH_TOKEN` に渡す。
 広いrepositoryへアクセスできる個人PATを共有しない。fork由来など信頼できないcodeを
 実行するworkflowへsecretを渡さない。
 
-canaryは専用PATを安全に用意できるまで手動実行だけにする。secret未設定なら失敗させ、
-未検証のrunをgreenにしない。現在のprobeはupload endpointの疎通確認であり、
-動画renderingまで含むE2Eではない。
+canaryは専用PATを安全に用意できるまで手動実行だけにする。PATはrepository secretでは
+なく、default branchだけに制限した `canary` environmentへ置く。workflowもdefault branch
+以外では失敗させる。secret未設定なら失敗させ、未検証のrunをgreenにしない。現在の
+probeはupload endpointの疎通確認であり、動画renderingまで含むE2Eではない。
 
 ## 配布
 
@@ -108,7 +108,8 @@ canaryは専用PATを安全に用意できるまで手動実行だけにする�
 第三者に同名を取られる余地があるため、最初のpublishを先に行う。
 
 初回publish後はGitHub Actionsをnpm trusted publisherとして登録する。
-以後のreleaseはlong-lived npm tokenを置かず、release workflowのOIDCでpublishする。
+以後のreleaseはlong-lived npm tokenを置かず、`npm` environmentへ束縛したrelease
+workflowのOIDCで、package versionと一致するtagだけをpublishする。
 具体的な手順は [releasing.md](releasing.md) に記載する。
 
 ## 検証済みの挙動
