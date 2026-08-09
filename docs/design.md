@@ -77,7 +77,19 @@ MCPサーバーを入口に置くのは、エージェントに書式を選ば�
 
 PR #1 の本文に `<video>` タグを置き、`Accept: application/vnd.github.html+json` で `body_html` を取得したところ、タグは `data-canonical-src` 付きで残っていた。`POST /markdown` の出力と実際のPR本文で挙動は同じ。
 
+## 表示名の拡張子とcontent typeは一致していないと弾かれる
+
+`--name スクショ` のように拡張子のない表示名を渡すと422で、`name has a file extension that does not match the content type: . != image/png` が返る。GitHubは表示名の拡張子とcontent typeを突き合わせている。
+
+表示名を変えたい人は「見出しを変えたい」のであって「形式を変えたい」わけではないので、拡張子がなければ元ファイルのものを補う。拡張子を明示して渡した場合はそのまま送り、食い違えばGitHubが弾く。
+
+## エラーは文字列ではなく `kind` で判別できるようにする
+
+非公開エンドポイントに依存する以上、呼び出し側が知りたいのは「認証が悪いのか、ファイルがデカいのか、エンドポイントが変わったのか」。メッセージの文言は安定した契約にできないので、`GitHubAttachError.kind`（`auth` / `rate-limit` / `too-large` / `not-found` / `endpoint-changed` / `unknown`）で分岐できるようにした。
+
+`endpoint-changed` は、レスポンスがJSONでないとき、または返ってきたURLが `user-attachments` の形式でないときに出る。ここを検証しないと、GitHubが別形式のURLを返し始めた日に「`<video>` が黙って剥がされて何も表示されない」という一番わかりにくい壊れ方をする。
+
 ## まだ確認できていないこと
 
-- fine-grained PAT とGitHub Actionsの `GITHUB_TOKEN`（`ghs_`）で201が返るか。CIで使えるかがこれで決まる
-- 拡張子とcontent_typeが食い違うときの挙動
+- fine-grained PAT で201が返るか
+- GitHub Actionsの `GITHUB_TOKEN`（`ghs_`）で通るか。nightlyのcanaryワークフローが毎晩答えを出す

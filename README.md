@@ -28,7 +28,7 @@ Drop that URL into a `<video>` tag and GitHub renders a player:
 <video src="https://github.com/user-attachments/assets/9a34c7bd-..." controls></video>
 ```
 
-`uploads.github.com` is undocumented and unsupported by GitHub. It can change or disappear without notice. This project's job is to wrap it honestly: one small surface to call, a clear error when it breaks, and a degraded fallback that never pretends to be a video player.
+`uploads.github.com` is undocumented and unsupported by GitHub. It can change or disappear without notice. This project's job is to wrap it honestly: one small surface to call, an error that says which way it broke, and a nightly canary run so a change gets noticed by the repo rather than by your users.
 
 ## Usage
 
@@ -56,11 +56,38 @@ const asset = await attach("./demo.mp4", {
 toMarkdown(asset); // <video src="..." controls></video>
 ```
 
-The token comes from `--token`, then `GITHUB_TOKEN`, then `gh auth token`.
+The token comes from `--token`, then `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token` — the same order `gh` itself uses. In CI, set `GITHUB_TOKEN`: arguments passed as `--token` are visible to other users through `ps`.
 
 `toMarkdown` picks the syntax from the file's content type. Videos become `<video>` tags; images become `![alt](url)`. Writing `![](demo.mp4)` yields an `<img>` that never plays, and that is the one mistake this library exists to prevent — so the caller never chooses the syntax.
 
 An MCP server (`attach_media`, `attach_and_comment`) is the next thing to build, so agents get the same guarantee.
+
+## Failures say which way they broke
+
+Every failure throws a `GitHubAttachError` with a `kind` you can branch on, because the wording of an undocumented endpoint's errors is not something to match on:
+
+```ts
+import { attach, GitHubAttachError } from "gh-video-attach";
+
+try {
+  await attach("./demo.mp4", { repo: "owner/name", token });
+} catch (error) {
+  if (error instanceof GitHubAttachError && error.kind === "endpoint-changed") {
+    // GitHub answered in a shape this library does not recognise.
+  }
+}
+```
+
+`kind` is one of `auth`, `rate-limit`, `too-large`, `not-found`, `endpoint-changed`, `unknown`. `endpoint-changed` is the one that matters: it fires when the response is not JSON, or when the returned URL is not a `user-attachments` asset — the case where a naive wrapper would hand back a URL that renders as nothing at all.
+
+## Development
+
+```bash
+npm install
+npm run verify   # typecheck + tests, no network
+```
+
+A nightly [canary workflow](.github/workflows/canary.yml) uploads a 1px image against the real endpoint. It is the only thing that catches GitHub changing the path out from under this library.
 
 ## Verified
 
@@ -75,8 +102,9 @@ An MCP server (`attach_media`, `attach_and_comment`) is the next thing to build,
 | `<video>` with a `user-attachments` URL | renders a player, in a real PR body |
 | `<video>` with a release / raw / external URL | tag stripped |
 | `![](url)` with an MP4 | renders as `<img>`, no playback |
+| display name without an extension | 422 — GitHub matches the name's extension against the content type |
 
-Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs and the Actions `GITHUB_TOKEN`.
+Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs. The Actions `GITHUB_TOKEN` is answered nightly by the canary.
 
 ## License
 
