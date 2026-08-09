@@ -1,0 +1,32 @@
+# uploads.github.com is undocumented, so it can stop working without anyone
+# announcing it. This uploads a 1px image every night: a red run here means the
+# endpoint moved, not that someone's code broke.
+name: canary
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Upload a 1px probe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' \
+            | base64 -d > probe.png
+          node dist/cli.js probe.png --repo "$GITHUB_REPOSITORY" --url
