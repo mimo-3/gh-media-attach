@@ -26,25 +26,14 @@ const runner = `
   }
 `;
 
-async function isolatedTokenEnvironment(
-  t,
-  { fakeGh = true, ghMode = "success", ghValue = "gh-cli-value" } = {},
-) {
+async function isolatedTokenEnvironment(t) {
   const directory = await mkdtemp(join(tmpdir(), "gh-video-attach-token-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const marker = join(directory, "gh-was-called");
 
-  if (fakeGh) {
-    const executable = join(directory, "gh");
-    await writeFile(
-      executable,
-      `#!/bin/sh\nprintf invoked > ${JSON.stringify(marker)}\n` +
-        (ghMode === "fail"
-          ? "exit 1\n"
-          : `printf "%s\\n" ${JSON.stringify(ghValue)}\n`),
-    );
-    await chmod(executable, 0o700);
-  }
+  const executable = join(directory, "gh");
+  await writeFile(executable, `#!/bin/sh\nprintf invoked > ${JSON.stringify(marker)}\n`);
+  await chmod(executable, 0o700);
 
   return { directory, marker };
 }
@@ -69,7 +58,7 @@ async function assertMarker(marker, expected) {
   assert.equal(exists, expected);
 }
 
-test("resolveToken prefers a non-empty explicit value over both environments and gh", async (t) => {
+test("resolveToken prefers a non-empty explicit value over both environments", async (t) => {
   // Arrange
   const { directory, marker } = await isolatedTokenEnvironment(t);
 
@@ -87,7 +76,7 @@ test("resolveToken prefers a non-empty explicit value over both environments and
   await assertMarker(marker, false);
 });
 
-test("resolveToken prefers GH_TOKEN over GITHUB_TOKEN and gh", async (t) => {
+test("resolveToken prefers GH_TOKEN over GITHUB_TOKEN", async (t) => {
   // Arrange
   const { directory, marker } = await isolatedTokenEnvironment(t);
 
@@ -119,7 +108,7 @@ test("resolveToken ignores a blank GH_TOKEN and uses GITHUB_TOKEN", async (t) =>
   await assertMarker(marker, false);
 });
 
-test("resolveToken uses gh only when no explicit or environment value exists", async (t) => {
+test("resolveToken does not execute a PATH helper when no token exists", async (t) => {
   // Arrange
   const { directory, marker } = await isolatedTokenEnvironment(t);
 
@@ -127,8 +116,10 @@ test("resolveToken uses gh only when no explicit or environment value exists", a
   const result = runResolve({ PATH: directory });
 
   // Assert
-  assert.deepEqual(result, { ok: true, value: "gh-cli-value" });
-  await assertMarker(marker, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.name, "GitHubAttachError");
+  assert.equal(result.kind, "auth");
+  await assertMarker(marker, false);
 });
 
 test("resolveToken rejects an explicitly blank value instead of falling back", async (t) => {
@@ -149,31 +140,4 @@ test("resolveToken rejects an explicitly blank value instead of falling back", a
   assert.equal(result.name, "GitHubAttachError");
   assert.equal(result.kind, "invalid-input");
   await assertMarker(marker, false);
-});
-
-test("resolveToken reports auth when no source provides a value without invoking real gh", async (t) => {
-  // Arrange: PATH contains no executable named gh, so the machine's real gh cannot run.
-  const { directory } = await isolatedTokenEnvironment(t, { fakeGh: false });
-
-  // Act
-  const result = runResolve({ PATH: directory });
-
-  // Assert
-  assert.equal(result.ok, false);
-  assert.equal(result.name, "GitHubAttachError");
-  assert.equal(result.kind, "auth");
-});
-
-test("resolveToken reports auth when isolated gh fails", async (t) => {
-  // Arrange
-  const { directory, marker } = await isolatedTokenEnvironment(t, { ghMode: "fail" });
-
-  // Act
-  const result = runResolve({ PATH: directory });
-
-  // Assert
-  assert.equal(result.ok, false);
-  assert.equal(result.name, "GitHubAttachError");
-  assert.equal(result.kind, "auth");
-  await assertMarker(marker, true);
 });
