@@ -27,7 +27,13 @@ Update or remove the global CLI with `npm update --global gh-video-attach` or
 
 ## CLI
 
-Authenticate with `gh auth login`, or set `GH_TOKEN` in the environment.
+Set `GH_TOKEN` or `GITHUB_TOKEN` in the environment. To use an existing GitHub
+CLI login without letting this package execute a helper from `PATH`, pass the
+token explicitly through the environment:
+
+```bash
+GH_TOKEN="$(gh auth token)" gh-video-attach ./demo.mp4 --repo owner/name
+```
 
 ```bash
 # Print ready-to-paste Markdown.
@@ -45,11 +51,10 @@ Run `gh-video-attach --help` for all options. If an upload succeeds but comment
 creation fails, the CLI prints the Markdown to stdout before exiting with an
 error, so the uploaded asset is not lost.
 
-The CLI resolves authentication in this order:
+The CLI resolves authentication in this order and never runs another program:
 
 1. `GH_TOKEN`
 2. `GITHUB_TOKEN`
-3. `gh auth token`
 
 There is intentionally no `--token` option. Command-line arguments can be read
 by other processes on the same machine.
@@ -125,14 +130,16 @@ The automatic Actions `GITHUB_TOKEN` can read repository metadata but returned
 therefore needs a separate PAT.
 
 Use a dedicated bot account that can access only the target repositories. Put
-its PAT in an Actions secret and expose that secret as `GH_TOKEN` only to a
-trusted job. Do not reuse a broad personal PAT, and do not expose the secret to
-code from forks or other untrusted sources. Classic PAT `repo` scope is the
-only PAT configuration verified so far; fine-grained PATs remain unverified.
+its PAT in the protected `canary` Actions environment as `CANARY_TOKEN`, never
+as a repository-level secret, and expose it as `GH_TOKEN` only to that job.
+Restrict the environment to the default branch. Do not reuse a broad personal
+PAT, and do not expose the secret to code from forks or other untrusted sources.
+Classic PAT `repo` scope is the only PAT configuration verified so far;
+fine-grained PATs remain unverified.
 
-The included [canary workflow](.github/workflows/canary.yml) is manual until a
-dedicated credential is configured. A missing secret fails the probe instead
-of reporting an untested green result.
+The included [canary workflow](.github/workflows/canary.yml) is manual and
+default-branch-only until a dedicated credential is configured. A missing
+secret fails the probe instead of reporting an untested green result.
 
 ## Why this exists
 
