@@ -2,7 +2,7 @@
 
 Attach videos and images to GitHub issues, PRs and comments with a personal access token — no browser, no session cookie.
 
-> **Status: design phase.** The upload path is verified working (see [docs/design.md](docs/design.md)), but the library itself is not implemented yet.
+> **Status: working, not published.** The CLI and the library run today. The MCP server is not built yet, and nothing is on npm.
 
 ## GitHub plays videos only from its own attachment URLs
 
@@ -30,29 +30,37 @@ Drop that URL into a `<video>` tag and GitHub renders a player:
 
 `uploads.github.com` is undocumented and unsupported by GitHub. It can change or disappear without notice. This project's job is to wrap it honestly: one small surface to call, a clear error when it breaks, and a degraded fallback that never pretends to be a video player.
 
-## Planned interface
-
-Three ways in, one core:
+## Usage
 
 ```bash
-# CLI
-gh-video-attach ./demo.mp4 --repo owner/name --pr 42
+npm install && npm run build
+
+# print ready-to-paste markdown
+node dist/cli.js ./demo.mp4 --repo owner/name
+# <video src="https://github.com/user-attachments/assets/..." controls></video>
+
+# post it as a comment instead
+node dist/cli.js ./demo.mp4 --repo owner/name --pr 42
+
+# just the URL
+node dist/cli.js ./demo.mp4 --repo owner/name --url
 ```
 
 ```ts
-// library
-import { attach, toMarkdown } from "gh-video-attach";
-const asset = await attach("./demo.mp4", { repo: "owner/name" });
+import { attach, toMarkdown, resolveToken } from "gh-video-attach";
+
+const asset = await attach("./demo.mp4", {
+  repo: "owner/name",
+  token: resolveToken(),
+});
 toMarkdown(asset); // <video src="..." controls></video>
 ```
 
-```
-# MCP server, for coding agents
-attach_media(path, repo)  ->  ready-to-paste markdown
-attach_and_comment(path, repo, issue)
-```
+The token comes from `--token`, then `GITHUB_TOKEN`, then `gh auth token`.
 
-The renderer picks the syntax from the file's MIME type. Videos become `<video>` tags; images become `![alt](url)`. Using `![]()` for a video produces an `<img>` that never plays, and that mistake is the one thing an agent should not be able to make.
+`toMarkdown` picks the syntax from the file's content type. Videos become `<video>` tags; images become `![alt](url)`. Writing `![](demo.mp4)` yields an `<img>` that never plays, and that is the one mistake this library exists to prevent — so the caller never chooses the syntax.
+
+An MCP server (`attach_media`, `attach_and_comment`) is the next thing to build, so agents get the same guarantee.
 
 ## Verified
 
@@ -62,11 +70,13 @@ The renderer picks the syntax from the file's MIME type. Videos become `<video>`
 | MP4 upload, public repo | 201 |
 | MP4 upload, private repo | 201 |
 | Auth via `gh auth token` (`gho_`, scope `repo`) | works |
-| `<video>` with a `user-attachments` URL | renders a player |
+| 12 MB video | 201 — the 10 MB free-plan cap does not apply here |
+| 124 MB video | 422 with `errors[0].field = "size"`, not 413 |
+| `<video>` with a `user-attachments` URL | renders a player, in a real PR body |
 | `<video>` with a release / raw / external URL | tag stripped |
 | `![](url)` with an MP4 | renders as `<img>`, no playback |
 
-Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs, the Actions `GITHUB_TOKEN`, and real size limits.
+Checked on 2026-08-09 against github.com. Not yet checked: fine-grained PATs and the Actions `GITHUB_TOKEN`.
 
 ## License
 

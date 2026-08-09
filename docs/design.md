@@ -64,9 +64,20 @@ mcp      attach_media / attach_and_comment
 
 MCPサーバーを入口に置くのは、エージェントに書式を選ばせないため。`attach_media` はそのまま貼れるMarkdownを返し、`attach_and_comment` は投稿まで済ませる。
 
-## 実装前に確認すること
+## サイズ上限は100MB。超過は413ではなく422で返る
+
+実測（2026-08-09）:
+
+- 12MBのmp4 → 201。Web UI添付の「無料プランは10MBまで」はこのエンドポイントには効いていない
+- 124MBのmp4 → 422。本文は `errors[0].field === "size"` で、メッセージは `size Yowza that's a big file. <span class='drag-and-drop-error-info'>...` のようにHTMLを含む
+
+422をひとくくりに「認証方式が変わった」と解釈すると誤診するので、`errors[0].field` を見て切り分け、メッセージからHTMLタグを剥がしてから出す。
+
+## 実PRでのレンダリングも確認済み
+
+PR #1 の本文に `<video>` タグを置き、`Accept: application/vnd.github.html+json` で `body_html` を取得したところ、タグは `data-canonical-src` 付きで残っていた。`POST /markdown` の出力と実際のPR本文で挙動は同じ。
+
+## まだ確認できていないこと
 
 - fine-grained PAT とGitHub Actionsの `GITHUB_TOKEN`（`ghs_`）で201が返るか。CIで使えるかがこれで決まる
-- サイズ上限の実挙動。ドキュメント上はWeb UI添付が無料10MB / 有料100MBだが、このエンドポイントで同じ制限がかかるかは未確認
-- 実issueでのレンダリング。ここまでの検証は `POST /markdown` の出力で、実際のissue本文とは別経路の可能性がある
 - 拡張子とcontent_typeが食い違うときの挙動
