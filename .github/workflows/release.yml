@@ -10,15 +10,26 @@ permissions:
 
 jobs:
   npm:
+    environment: npm
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Require a matching release tag
+        run: |
+          package_version="$(node --print "require('./package.json').version")"
+          expected_tag="v${package_version}"
+          if [ "$GITHUB_REF_NAME" != "$expected_tag" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match package version $package_version."
+            exit 1
+          fi
       - name: Require an OIDC-capable npm CLI
         run: |
           node --eval "const version = require('node:child_process').execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(); const [major, minor] = version.split('.').map(Number); if (major < 11 || (major === 11 && minor < 5)) throw new Error('npm 11.5.1 or later is required')"
