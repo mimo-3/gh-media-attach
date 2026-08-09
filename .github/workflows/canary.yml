@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   upload:
@@ -23,10 +23,18 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # The Actions GITHUB_TOKEN gets a 404 from the upload endpoint, so the
+      # canary needs a PAT in the CANARY_TOKEN secret. Without one there is
+      # nothing to test, and a red run every night would train everyone to
+      # ignore it.
       - name: Upload a 1px probe
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.CANARY_TOKEN }}
         run: |
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "CANARY_TOKEN is not set, so there is no token that can reach the endpoint. Skipping."
+            exit 0
+          fi
           printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' \
             | base64 -d > probe.png
           node dist/cli.js probe.png --repo "$GITHUB_REPOSITORY" --url
