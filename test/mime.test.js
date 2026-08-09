@@ -20,11 +20,18 @@ test("only video types count as video", () => {
 });
 
 test("a renamed file keeps an extension, because GitHub rejects names without one", () => {
-  assert.equal(ensureExtension("スクショ", "/tmp/probe.png"), "スクショ.png");
-  assert.equal(ensureExtension("demo", "/tmp/a.b/clip.mp4"), "demo.mp4");
+  assert.equal(ensureExtension("スクショ", "/tmp/probe.png", "image/png"), "スクショ.png");
+  assert.equal(ensureExtension("demo", "/tmp/a.b/clip.mp4", "video/mp4"), "demo.mp4");
 });
 
-test("an explicit extension is left alone", () => {
-  assert.equal(ensureExtension("thumb.png", "/tmp/clip.mp4"), "thumb.png");
-  assert.equal(ensureExtension("demo.mp4", "/tmp/demo.mp4"), "demo.mp4");
+test("an explicit matching extension is left alone", () => {
+  assert.equal(ensureExtension("thumb.png", "/tmp/clip.mp4", "image/png"), "thumb.png");
+  assert.equal(ensureExtension("demo.mp4", "/tmp/demo.mp4", "video/mp4"), "demo.mp4");
+});
+
+test("a display extension that disagrees with the content type is rejected", () => {
+  assert.throws(
+    () => ensureExtension("thumb.png", "/tmp/clip.mp4", "video/mp4"),
+    /does not match content type/,
+  );
 });
