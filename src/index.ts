@@ -1,5 +1,7 @@
-export { attach, comment, resolveRepositoryId } from "./attach.js";
-export type { Asset, AttachOptions } from "./attach.js";
+export { attach, comment } from "./attach.js";
+export type { Asset, AttachOptions, CommentOptions } from "./attach.js";
 export { toMarkdown } from "./render.js";
-export { guessContentType, isVideo } from "./mime.js";
+export { guessContentType } from "./mime.js";
 export { resolveToken } from "./token.js";
+export { GitHubAttachError } from "./errors.js";
+export type { AttachFailureKind } from "./errors.js";

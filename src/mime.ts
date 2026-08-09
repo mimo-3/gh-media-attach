@@ -31,3 +31,17 @@ export function guessContentType(fileName: string): string {
 export function isVideo(contentType: string): boolean {
   return contentType.startsWith("video/");
 }
+
+/**
+ * GitHub checks the declared content type against the extension of the display
+ * name and rejects a mismatch, so a display name of "screenshot" fails where
+ * "screenshot.png" works. Callers who rename a file are asking for a nicer
+ * label, not for a different format.
+ */
+export function ensureExtension(name: string, filePath: string): string {
+  const hasExtension = /\.[A-Za-z0-9]+$/.test(name);
+  if (hasExtension) return name;
+
+  const source = /\.[A-Za-z0-9]+$/.exec(filePath);
+  return source ? `${name}${source[0]}` : name;
+}
