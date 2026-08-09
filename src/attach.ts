@@ -1,5 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
-import type { Stats } from "node:fs";
+import { open } from "node:fs/promises";
 import { basename } from "node:path";
 import { ensureExtension, guessContentType, validateContentType } from "./mime.js";
 import { splitRepo } from "./repo.js";
@@ -14,6 +13,7 @@ import type { AttachFailureKind } from "./errors.js";
 const UPLOAD_ORIGIN = "https://uploads.github.com";
 const API_ORIGIN = "https://api.github.com";
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const FILE_READ_CHUNK_BYTES = 1024 * 1024;
 
 /** The only URL shape GitHub currently renders as an inline attachment. */
 const ASSET_URL =
@@ -79,24 +79,10 @@ async function attachFile(filePath: string, options: AttachOptions): Promise<Ass
 
   splitRepo(options.repo);
   const token = requireToken(options.token);
-  const fileInfo = await fileMetadata(filePath);
-  if (!fileInfo.isFile()) {
-    throw new GitHubAttachError(`"${sanitizeTerminalText(filePath)}" is not a regular file`, "file");
-  }
-  rejectOversized(fileInfo.size);
-
-  const contentType = validateContentType(
-    options.contentType === undefined
-      ? guessContentType(filePath)
-      : requireString(options.contentType, "content type"),
-  );
-  const displayName = options.name === undefined ? basename(filePath) : requireString(options.name, "name");
-  const name = ensureExtension(displayName, filePath);
+  const { bytes, contentType, name } = await prepareAttachmentFile(filePath, options);
 
   // Always resolve from owner/name so the id cannot disagree with the public target.
   const repositoryId = await resolveRepositoryId(options.repo, token, options.signal);
-  const bytes = await fileBytes(filePath);
-  rejectOversized(bytes.byteLength);
 
   const query = new URLSearchParams({
     name,
@@ -407,23 +393,59 @@ async function readResponseText(
   }
 }
 
-async function fileMetadata(filePath: string): Promise<Stats> {
+async function prepareAttachmentFile(
+  filePath: string,
+  options: AttachOptions,
+): Promise<{ bytes: Buffer; contentType: string; name: string }> {
+  let handle;
   try {
-    return await stat(filePath);
+    handle = await open(filePath, "r");
   } catch (error) {
     throw wrapFailure(
       error,
-      `could not inspect file "${sanitizeTerminalText(filePath)}"`,
+      `could not open file "${sanitizeTerminalText(filePath)}"`,
       "file",
     );
   }
-}
 
-async function fileBytes(filePath: string): Promise<Buffer> {
   try {
-    return await readFile(filePath);
+    const fileInfo = await handle.stat();
+    if (!fileInfo.isFile()) {
+      throw new GitHubAttachError(
+        `"${sanitizeTerminalText(filePath)}" is not a regular file`,
+        "file",
+      );
+    }
+    rejectOversized(fileInfo.size);
+
+    const contentType = validateContentType(
+      options.contentType === undefined
+        ? guessContentType(filePath)
+        : requireString(options.contentType, "content type"),
+    );
+    const displayName =
+      options.name === undefined ? basename(filePath) : requireString(options.name, "name");
+    const name = ensureExtension(displayName, filePath, contentType);
+
+    const chunks: Buffer[] = [];
+    let size = 0;
+    while (true) {
+      const chunk = Buffer.allocUnsafe(
+        Math.min(FILE_READ_CHUNK_BYTES, MAX_ATTACHMENT_BYTES + 1 - size),
+      );
+      const { bytesRead } = await handle.read(chunk, 0, chunk.byteLength, null);
+      if (bytesRead === 0) break;
+
+      size += bytesRead;
+      rejectOversized(size);
+      chunks.push(chunk.subarray(0, bytesRead));
+    }
+    return { bytes: Buffer.concat(chunks, size), contentType, name };
   } catch (error) {
+    if (error instanceof GitHubAttachError) throw error;
     throw wrapFailure(error, `could not read file "${sanitizeTerminalText(filePath)}"`, "file");
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -461,7 +483,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function safeDetail(value: unknown): string {
   try {
     const serialised = JSON.stringify(value);
-    return (serialised ?? String(value)).slice(0, 300);
+    return sanitizeTerminalText(serialised ?? String(value)).slice(0, 300);
   } catch {
     return "unserialisable response";
   }
