@@ -62,14 +62,21 @@ export function isVideo(contentType: string): boolean {
  * "screenshot.png" works. Callers who rename a file are asking for a nicer
  * label, not for a different format.
  */
-export function ensureExtension(name: string, filePath: string): string {
+export function ensureExtension(name: string, filePath: string, contentType: string): string {
   if (name.trim() === "") {
     throw new GitHubAttachError("attachment name must not be empty", "invalid-input");
   }
 
   const hasExtension = /\.[A-Za-z0-9]+$/.test(name);
-  if (hasExtension) return name;
-
   const source = /\.[A-Za-z0-9]+$/.exec(filePath);
-  return source ? `${name}${source[0]}` : name;
+  const result = hasExtension ? name : source ? `${name}${source[0]}` : name;
+  const nameContentType = guessContentType(result);
+
+  if (nameContentType !== contentType) {
+    throw new GitHubAttachError(
+      `attachment name "${sanitizeTerminalText(result)}" does not match content type "${sanitizeTerminalText(contentType)}"`,
+      "invalid-input",
+    );
+  }
+  return result;
 }
