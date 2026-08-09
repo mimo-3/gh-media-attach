@@ -2,13 +2,39 @@
   "name": "gh-video-attach",
   "version": "0.1.0",
   "description": "Attach videos and images to GitHub issues, PRs and comments with a personal access token",
+  "keywords": [
+    "github",
+    "video",
+    "attachment",
+    "upload",
+    "user-attachments",
+    "markdown",
+    "cli",
+    "mcp"
+  ],
   "license": "MIT",
+  "author": "mimo-3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mimo-3/gh-video-attach.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mimo-3/gh-video-attach/issues"
+  },
+  "homepage": "https://github.com/mimo-3/gh-video-attach#readme",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "gh-video-attach": "./dist/cli.js"
   },
@@ -18,7 +44,9 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "test": "npm run build && node --test test/*.test.js",
+    "verify": "npm run typecheck && npm test",
+    "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
