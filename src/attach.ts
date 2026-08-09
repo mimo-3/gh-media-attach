@@ -95,21 +95,54 @@ export async function attach(filePath: string, options: AttachOptions): Promise<
   return { url: body.url, name, contentType, size: bytes.byteLength };
 }
 
+type UploadError = { message: string; field?: string };
+
+/**
+ * Error bodies come back as GitHub's REST shape, and the messages inside can
+ * carry HTML meant for the web editor.
+ */
+function readUploadError(raw: string): UploadError {
+  try {
+    const body = JSON.parse(raw) as {
+      message?: string;
+      errors?: { field?: string; message?: string }[];
+    };
+    const first = body.errors?.[0];
+    const message = first?.message ?? body.message ?? raw;
+    return first?.field !== undefined
+      ? { message: stripHtml(message), field: first.field }
+      : { message: stripHtml(message) };
+  } catch {
+    return { message: stripHtml(raw) };
+  }
+}
+
+function stripHtml(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
+}
+
 async function describeUploadFailure(response: Response, size: number): Promise<string> {
-  const detail = (await response.text()).slice(0, 500);
+  const { message, field } = readUploadError(await response.text());
   const megabytes = (size / 1024 / 1024).toFixed(1);
 
-  switch (response.status) {
-    case 401:
-    case 403:
-      return `upload rejected (HTTP ${response.status}). The token needs the "repo" scope and write access. ${detail}`;
-    case 413:
-      return `file too large at ${megabytes} MB (HTTP 413). GitHub caps attachments at 10 MB on free plans and 100 MB on paid ones. ${detail}`;
-    case 422:
-      return `upload rejected (HTTP 422). GitHub may have stopped accepting token auth on this endpoint. ${detail}`;
-    default:
-      return `upload failed (HTTP ${response.status}). ${detail}`;
+  if (response.status === 401 || response.status === 403) {
+    return `upload rejected (HTTP ${response.status}). The token needs the "repo" scope and write access to this repository. ${message}`;
   }
+
+  // Oversized uploads come back as 422 with a "size" field, not as 413.
+  if (response.status === 422 && field === "size") {
+    return `file too large at ${megabytes} MB. GitHub caps attachments at 100 MB. ${message}`;
+  }
+
+  if (response.status === 422) {
+    return `GitHub refused the upload (HTTP 422). ${message}`;
+  }
+
+  return `upload failed (HTTP ${response.status}). ${message}`;
 }
 
 /** Posts a comment on an issue or a pull request. */
