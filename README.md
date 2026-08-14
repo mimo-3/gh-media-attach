@@ -43,13 +43,20 @@ gh-video-attach ./demo.mp4 --repo owner/name
 gh-video-attach ./demo.mp4 --repo owner/name --pr 42
 gh-video-attach ./screenshot.png --repo owner/name --issue 42
 
+# Append the attachment to the pull request or issue body itself.
+gh-video-attach ./demo.mp4 --repo owner/name --pr 42 --append-body
+
 # Print only the uploaded asset URL.
 gh-video-attach ./demo.mp4 --repo owner/name --url
 ```
 
-Run `gh-video-attach --help` for all options. If an upload succeeds but comment
-creation fails, the CLI prints the Markdown to stdout before exiting with an
-error, so the uploaded asset is not lost.
+`--append-body` reads the current body and writes it back with the Markdown
+added at the end. An edit someone else makes between that read and the write is
+overwritten, so prefer a comment on a body several people are editing.
+
+Run `gh-video-attach --help` for all options. If an upload succeeds but the
+comment or body update fails, the CLI prints the Markdown to stdout before
+exiting with an error, so the uploaded asset is not lost.
 
 The CLI resolves authentication in this order and never runs another program:
 
@@ -85,9 +92,27 @@ await comment({
 });
 ```
 
-Pass an `AbortSignal` to `attach` or `comment` when the caller needs its own
-timeout or cancellation policy. `toMarkdown` renders supported videos as a
-`<video controls>` element and supported images as image Markdown.
+`appendToBody` writes to the body of the issue or pull request instead of
+adding a comment, and returns its URL:
+
+```ts
+import { appendToBody } from "gh-video-attach";
+
+await appendToBody({
+  repo: "owner/name",
+  issue: 42,
+  body: markdown,
+  token,
+});
+```
+
+It reads the body and writes the combined text back, so an edit made by someone
+else in between is lost. Existing text is separated from the addition by a
+blank line, and an empty body is replaced by the addition alone.
+
+Pass an `AbortSignal` to `attach`, `comment`, or `appendToBody` when the caller
+needs its own timeout or cancellation policy. `toMarkdown` renders supported
+videos as a `<video controls>` element and supported images as image Markdown.
 
 Supported file extensions:
 
