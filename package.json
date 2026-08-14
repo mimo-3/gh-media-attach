@@ -1,10 +1,12 @@
 {
-  "name": "gh-video-attach",
-  "version": "0.1.0",
+  "name": "gh-media-attach",
+  "version": "0.2.0",
   "description": "Attach videos and images to GitHub issues, PRs and comments with a personal access token",
   "keywords": [
     "github",
     "video",
+    "image",
+    "media",
     "attachment",
     "upload",
     "user-attachments",
@@ -15,12 +17,12 @@
   "author": "mimo-3",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mimo-3/gh-video-attach.git"
+    "url": "git+https://github.com/mimo-3/gh-media-attach.git"
   },
   "bugs": {
-    "url": "https://github.com/mimo-3/gh-video-attach/issues"
+    "url": "https://github.com/mimo-3/gh-media-attach/issues"
   },
-  "homepage": "https://github.com/mimo-3/gh-video-attach#readme",
+  "homepage": "https://github.com/mimo-3/gh-media-attach#readme",
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -37,7 +39,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "gh-video-attach": "dist/cli.js"
+    "gh-media-attach": "dist/cli.js"
   },
   "files": [
     "dist"
