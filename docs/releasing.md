@@ -49,9 +49,8 @@ npm name, so it has to be claimed by a publish before a trusted publisher can be
 registered for it, as in [First release](#first-release). The repository is
 already public, so only that ordering still applies.
 
-Once the new release is installable, point the old package at it. If
-`gh-video-attach` was never published, there is nothing to deprecate and this
-section does not apply.
+Once the new release is installable, point the old package at it. `0.1.0` is
+published, so the deprecation notice below is what existing installs will see.
 
 1. Confirm the new package is published: `npm view gh-media-attach version`.
 2. Authenticate the maintainer account with `npm login --auth-type=web`.
