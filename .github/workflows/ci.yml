@@ -50,5 +50,5 @@ jobs:
           cd "$RUNNER_TEMP/smoke"
           npm init --yes
           npm install "$RUNNER_TEMP/$tarball_name"
-          node --input-type=module --eval "import('gh-video-attach').then((module) => { if (typeof module.attach !== 'function') process.exit(1) })"
-          ./node_modules/.bin/gh-video-attach --help
+          node --input-type=module --eval "import('gh-media-attach').then((module) => { if (typeof module.attach !== 'function') process.exit(1) })"
+          ./node_modules/.bin/gh-media-attach --help
