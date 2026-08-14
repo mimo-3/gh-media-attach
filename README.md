@@ -1,8 +1,11 @@
-# gh-video-attach
+# gh-media-attach
 
 Upload a video or image as a GitHub user attachment and get ready-to-paste
 Markdown. It works from a CLI or an ESM library without a browser, cookie, or
 GitHub web session.
+
+Renamed from `gh-video-attach` in 0.2.0. Later versions are published under the
+new name only.
 
 > **Experimental:** this package uses an undocumented GitHub upload endpoint.
 > GitHub can change or remove it without notice. Treat `0.x` releases as an
@@ -13,17 +16,17 @@ GitHub web session.
 Node.js 20 or later is required.
 
 ```bash
-npm install --global gh-video-attach
+npm install --global gh-media-attach
 ```
 
 For library use:
 
 ```bash
-npm install gh-video-attach
+npm install gh-media-attach
 ```
 
-Update or remove the global CLI with `npm update --global gh-video-attach` or
-`npm uninstall --global gh-video-attach`.
+Update or remove the global CLI with `npm update --global gh-media-attach` or
+`npm uninstall --global gh-media-attach`.
 
 ## CLI
 
@@ -32,22 +35,22 @@ CLI login without letting this package execute a helper from `PATH`, pass the
 token explicitly through the environment:
 
 ```bash
-GH_TOKEN="$(gh auth token)" gh-video-attach ./demo.mp4 --repo owner/name
+GH_TOKEN="$(gh auth token)" gh-media-attach ./demo.mp4 --repo owner/name
 ```
 
 ```bash
 # Print ready-to-paste Markdown.
-gh-video-attach ./demo.mp4 --repo owner/name
+gh-media-attach ./demo.mp4 --repo owner/name
 
 # Post the attachment as a pull request or issue comment.
-gh-video-attach ./demo.mp4 --repo owner/name --pr 42
-gh-video-attach ./screenshot.png --repo owner/name --issue 42
+gh-media-attach ./demo.mp4 --repo owner/name --pr 42
+gh-media-attach ./screenshot.png --repo owner/name --issue 42
 
 # Append the attachment to the pull request or issue body itself.
-gh-video-attach ./demo.mp4 --repo owner/name --pr 42 --append-body
+gh-media-attach ./demo.mp4 --repo owner/name --pr 42 --append-body
 
 # Print only the uploaded asset URL.
-gh-video-attach ./demo.mp4 --repo owner/name --url
+gh-media-attach ./demo.mp4 --repo owner/name --url
 ```
 
 `--append-body` reads the current body and writes it back with the Markdown
@@ -59,7 +62,7 @@ appended Markdown, the CLI reports a `conflict` instead of a success.
 A body is capped at 65,536 characters, which repeated appends can reach. GitHub
 answers with HTTP 422 at that point and the reason is included in the error.
 
-Run `gh-video-attach --help` for all options. If an upload succeeds but the
+Run `gh-media-attach --help` for all options. If an upload succeeds but the
 comment or body update fails, the CLI prints the Markdown to stdout before
 exiting with an error, so the uploaded asset is not lost.
 
@@ -79,7 +82,7 @@ import {
   comment,
   resolveToken,
   toMarkdown,
-} from "gh-video-attach";
+} from "gh-media-attach";
 
 const token = resolveToken();
 const asset = await attach("./demo.mp4", {
@@ -101,7 +104,7 @@ await comment({
 adding a comment, and returns its URL:
 
 ```ts
-import { appendToBody } from "gh-video-attach";
+import { appendToBody } from "gh-media-attach";
 
 await appendToBody({
   repo: "owner/name",
@@ -142,7 +145,7 @@ All failures from the public API throw `GitHubAttachError`. Branch on `kind`,
 not message text:
 
 ```ts
-import { attach, GitHubAttachError } from "gh-video-attach";
+import { attach, GitHubAttachError } from "gh-media-attach";
 
 try {
   await attach("./demo.mp4", { repo: "owner/name", token });
