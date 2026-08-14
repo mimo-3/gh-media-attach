@@ -147,14 +147,17 @@ workflowのOIDCで、package versionと一致するtagだけをpublishする。
 | user-attachments URLの `<video>` | PR本文でplayerとして表示 |
 | Release / raw / external URLの `<video>` | tagが削除 |
 | Actionsの自動 `GITHUB_TOKEN` | uploadのみ404 |
+| PR本文への `PATCH /repos/{owner}/{name}/issues/{N}` | 200、本文が更新される |
+| PRに `--issue N` を指定 | PATCH前に `invalid-input` で中断 |
+
+2026-08-14に mimo-3/gh-video-attach#9 で確認した。`--pr N --append-body` で
+`<video>` がPR本文に入り、playerとして表示された。
 
 未検証:
 
 - fine-grained PAT
 - GitHub Enterprise Server
 - user-attachments endpointの将来互換性
-- PR本文への `PATCH /repos/{owner}/{name}/issues/{N}`。GETがPRでも通ることは
-  既知だが、PATCHでPR本文を更新できるかはgithub.comで叩いていない。
-  `--pr N --append-body` はこの前提の上に立っている
-- issue本文への `PATCH /issues/{N}`（テストはすべてmock）
+- issue本文への `PATCH /issues/{N}`（PR本文でのみ確認した）
+- 同時編集による `conflict`（レースを実機で起こしていない）
 - 本文の65,536文字上限に到達したときの422 payloadの実際の形

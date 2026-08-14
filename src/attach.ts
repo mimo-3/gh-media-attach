@@ -206,9 +206,8 @@ async function patchBody(options: AppendBodyOptions): Promise<string> {
   // Blank markdown would only add trailing space, so it appends nothing.
   const addition = body.trim() === "" ? "" : body;
 
-  // This assumes a pull request body can be updated through the issues
-  // endpoint the same way it can be read. That is not verified against
-  // github.com yet; see docs/design.md.
+  // A pull request body updates through the issues endpoint the same way it
+  // reads. Verified against github.com on 2026-08-14; see docs/design.md.
   const target = `${API_ORIGIN}/repos/${owner}/${name}/issues/${issue}`;
   const current = await githubFetch(
     target,
