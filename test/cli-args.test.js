@@ -8,11 +8,32 @@ test("reads a file and a repository", () => {
   assert.equal(flags.repo, "owner/name");
   assert.equal(flags.issue, undefined);
   assert.equal(flags.urlOnly, false);
+  assert.equal(flags.appendBody, false);
+});
+
+test("--append-body targets the body of the issue or pull request", () => {
+  const issue = parseArguments(["a.mp4", "--repo", "owner/name", "--issue", "7", "--append-body"]);
+  assert.equal(issue.appendBody, true);
+  assert.equal(issue.issue, 7);
+  assert.equal(parseArguments(["a.mp4", "--pr", "42", "--append-body"]).appendBody, true);
+});
+
+test("--append-body without a target would silently do nothing", () => {
+  assert.throws(
+    () => parseArguments(["a.mp4", "--repo", "owner/name", "--append-body"]),
+    /--append-body needs --issue or --pr/,
+  );
 });
 
 test("--pr and --issue fill the same slot", () => {
   assert.equal(parseArguments(["a.mp4", "--pr", "42"]).issue, 42);
   assert.equal(parseArguments(["a.mp4", "--issue", "7"]).issue, 7);
+});
+
+test("--pr and --issue stay distinguishable so the target kind can be checked", () => {
+  assert.equal(parseArguments(["a.mp4", "--pr", "42"]).targetIsPullRequest, true);
+  assert.equal(parseArguments(["a.mp4", "--issue", "7"]).targetIsPullRequest, false);
+  assert.equal(parseArguments(["a.mp4", "--repo", "owner/name"]).targetIsPullRequest, undefined);
 });
 
 test("rejects issue numbers that Number() would silently accept", () => {
@@ -30,6 +51,7 @@ test("rejects issue numbers that Number() would silently accept", () => {
 test("refuses combinations that would silently drop an intent", () => {
   assert.throws(() => parseArguments(["a.mp4", "--issue", "1", "--pr", "2"]), /not both/);
   assert.throws(() => parseArguments(["a.mp4", "--url", "--issue", "1"]), /pick one/);
+  assert.throws(() => parseArguments(["a.mp4", "--append-body", "--url"]), /pick one/);
   assert.throws(() => parseArguments(["a.mp4", "b.mp4"]), /one file/);
 });
 
@@ -58,6 +80,10 @@ test("singleton options reject duplicates instead of silently overwriting intent
     /once|duplicate/,
   );
   assert.throws(() => parseArguments(["a.mp4", "--url", "--url"]), /once|duplicate/);
+  assert.throws(
+    () => parseArguments(["a.mp4", "--pr", "42", "--append-body", "--append-body"]),
+    /once|duplicate/,
+  );
 });
 
 test("--token is rejected because credentials must not be passed through argv", () => {

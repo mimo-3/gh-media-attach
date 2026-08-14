@@ -4,7 +4,8 @@
  * `uploads.github.com` is undocumented, so the wording of a message is not a
  * stable interface — this is. `endpoint-changed` means GitHub answered in a
  * shape this library does not recognise, which is the signal that the
- * unofficial path has moved.
+ * unofficial path has moved. `conflict` means GitHub answered in a shape this
+ * library understands, but someone else changed the target in the meantime.
  */
 export type AttachFailureKind =
   | "auth"
@@ -14,6 +15,7 @@ export type AttachFailureKind =
   | "upload-unavailable"
   | "endpoint-changed"
   | "invalid-input"
+  | "conflict"
   | "file"
   | "network"
   | "aborted"

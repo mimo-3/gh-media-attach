@@ -2,8 +2,11 @@ export type Flags = {
   file: string | undefined;
   repo: string | undefined;
   issue: number | undefined;
+  /** True when the number came from `--pr`, false from `--issue`. */
+  targetIsPullRequest: boolean | undefined;
   contentType: string | undefined;
   name: string | undefined;
+  appendBody: boolean;
   urlOnly: boolean;
   help: boolean;
 };
@@ -13,6 +16,7 @@ export const USAGE = `gh-video-attach <file> --repo owner/name [options]
   --repo owner/name    Repository the attachment belongs to (required)
   --issue N            Post the attachment as a comment on issue N
   --pr N               Post the attachment as a comment on pull request N
+  --append-body        Append to the issue or pull request body instead of commenting
   --content-type TYPE  Override the type guessed from the extension
   --name NAME          Override the file name shown on GitHub
   --url                Print only the asset URL, not the markdown
@@ -29,8 +33,10 @@ export function parseArguments(argv: string[]): Flags {
     file: undefined,
     repo: undefined,
     issue: undefined,
+    targetIsPullRequest: undefined,
     contentType: undefined,
     name: undefined,
+    appendBody: false,
     urlOnly: false,
     help: false,
   };
@@ -73,6 +79,7 @@ export function parseArguments(argv: string[]): Flags {
           throw new Error(`${argument} needs a safe integer, got "${raw}"`);
         }
         flags.issue = issue;
+        flags.targetIsPullRequest = argument === "--pr";
         break;
       }
       case "--content-type":
@@ -82,6 +89,10 @@ export function parseArguments(argv: string[]): Flags {
       case "--name":
         once("name");
         flags.name = value();
+        break;
+      case "--append-body":
+        once("append-body");
+        flags.appendBody = true;
         break;
       case "--url":
         once("url");
@@ -105,6 +116,12 @@ export function parseArguments(argv: string[]): Flags {
 
   if (flags.urlOnly && flags.issue !== undefined) {
     throw new Error("--url and --issue/--pr do different things; pick one");
+  }
+  if (flags.appendBody && flags.urlOnly) {
+    throw new Error("--append-body and --url do different things; pick one");
+  }
+  if (flags.appendBody && flags.issue === undefined) {
+    throw new Error("--append-body needs --issue or --pr");
   }
 
   return flags;
