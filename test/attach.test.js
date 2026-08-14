@@ -11,7 +11,7 @@ const AUTH_VALUE = "fixture-credential";
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
 async function temporaryDirectory(t) {
-  const directory = await mkdtemp(join(tmpdir(), "gh-video-attach-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "gh-media-attach-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   return directory;
 }

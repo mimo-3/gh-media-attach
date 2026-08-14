@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { splitRepo } from "../dist/repo.js";
 
 test("splits owner and name", () => {
-  assert.deepEqual(splitRepo("mimo-3/gh-video-attach"), {
+  assert.deepEqual(splitRepo("mimo-3/gh-media-attach"), {
     owner: "mimo-3",
-    name: "gh-video-attach",
+    name: "gh-media-attach",
   });
 });
 
