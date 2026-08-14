@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { attach, comment } from "./attach.js";
+import { attach, appendToBody, comment } from "./attach.js";
 import { parseArguments, USAGE } from "./cli-args.js";
 import { toMarkdown } from "./render.js";
 import { resolveToken } from "./token.js";
@@ -34,18 +34,21 @@ async function main(): Promise<void> {
   const markdown = toMarkdown(asset);
 
   if (flags.issue !== undefined) {
+    const write = flags.appendBody ? appendToBody : comment;
     try {
-      const commentUrl = await comment({
+      // Appending answers with the issue or pull request URL, commenting with
+      // the comment anchor, so the printed URL already names what was written.
+      const writtenUrl = await write({
         repo: flags.repo,
         issue: flags.issue,
         body: markdown,
         token,
         signal,
       });
-      process.stdout.write(`${commentUrl}\n`);
+      process.stdout.write(`${writtenUrl}\n`);
     } catch (error) {
       // The file is already on GitHub. Hand back the markdown so a failed
-      // comment does not cost the caller another upload.
+      // write does not cost the caller another upload.
       process.stdout.write(`${markdown}\n`);
       throw error;
     }
