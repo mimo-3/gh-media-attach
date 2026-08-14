@@ -14,7 +14,7 @@ const preload = pathToFileURL(resolve("test/fixtures/mock-fetch.mjs")).href;
 const cli = resolve("dist/cli.js");
 
 async function runCli(t, options) {
-  const directory = await mkdtemp(join(tmpdir(), "gh-video-attach-cli-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "gh-media-attach-cli-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const filePath = join(directory, "clip.mp4");
   await writeFile(filePath, Buffer.from("video-bytes"));

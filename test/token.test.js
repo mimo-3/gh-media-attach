@@ -27,7 +27,7 @@ const runner = `
 `;
 
 async function isolatedTokenEnvironment(t) {
-  const directory = await mkdtemp(join(tmpdir(), "gh-video-attach-token-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "gh-media-attach-token-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const marker = join(directory, "gh-was-called");
 
