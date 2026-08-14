@@ -30,6 +30,12 @@ test("--pr and --issue fill the same slot", () => {
   assert.equal(parseArguments(["a.mp4", "--issue", "7"]).issue, 7);
 });
 
+test("--pr and --issue stay distinguishable so the target kind can be checked", () => {
+  assert.equal(parseArguments(["a.mp4", "--pr", "42"]).targetIsPullRequest, true);
+  assert.equal(parseArguments(["a.mp4", "--issue", "7"]).targetIsPullRequest, false);
+  assert.equal(parseArguments(["a.mp4", "--repo", "owner/name"]).targetIsPullRequest, undefined);
+});
+
 test("rejects issue numbers that Number() would silently accept", () => {
   assert.throws(() => parseArguments(["a.mp4", "--issue", "0"]), /positive integer/);
   assert.throws(() => parseArguments(["a.mp4", "--issue", "1e3"]), /positive integer/);
