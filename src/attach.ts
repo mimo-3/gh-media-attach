@@ -49,6 +49,17 @@ export type CommentOptions = {
   signal?: AbortSignal;
 };
 
+export type AppendBodyOptions = {
+  /** `owner/name` */
+  repo: string;
+  /** Issue or pull request number. */
+  issue: number;
+  /** Markdown appended to the end of the existing body. */
+  body: string;
+  token: string;
+  signal?: AbortSignal;
+};
+
 /**
  * Uploads a file and returns the attachment URL GitHub renders inline.
  *
@@ -190,6 +201,104 @@ async function postComment(options: CommentOptions): Promise<string> {
   return created.html_url;
 }
 
+/** Appends markdown to an issue or pull request body, and returns its URL. */
+export async function appendToBody(options: AppendBodyOptions): Promise<string> {
+  try {
+    return await patchBody(options);
+  } catch (error) {
+    if (isAbortFailure(error) || options?.signal?.aborted) {
+      throw wrapFailure(error, "the body update was aborted", "aborted");
+    }
+    throw wrapFailure(error, "could not update the body", "unknown");
+  }
+}
+
+async function patchBody(options: AppendBodyOptions): Promise<string> {
+  if (!isRecord(options)) {
+    throw new GitHubAttachError("append options are required", "invalid-input");
+  }
+  if (typeof options.repo !== "string") {
+    throw new GitHubAttachError("repo must be an owner/name string", "invalid-input");
+  }
+  const { owner, name } = splitRepo(options.repo);
+  const token = requireToken(options.token);
+
+  if (!Number.isSafeInteger(options.issue) || options.issue <= 0) {
+    throw new GitHubAttachError(
+      `issue must be a positive safe integer, got ${String(options.issue)}`,
+      "invalid-input",
+    );
+  }
+  if (typeof options.body !== "string") {
+    throw new GitHubAttachError("append body must be a string", "invalid-input");
+  }
+
+  // Pull requests expose their body through the issues endpoint too, so one
+  // read-modify-write covers both. A concurrent edit in between is lost.
+  const target = `${API_ORIGIN}/repos/${owner}/${name}/issues/${options.issue}`;
+  const current = await githubFetch(
+    target,
+    { headers: apiHeaders(token), signal: options.signal ?? null },
+    options.signal,
+    "read the body",
+  );
+
+  if (!current.ok) {
+    throw await responseFailure(current, "body", undefined, options.signal);
+  }
+
+  const existing = await readJson(current, "the issues API", options.signal);
+  const existingBody = isRecord(existing) ? existing.body : undefined;
+  if (typeof existingBody !== "string" && existingBody !== null) {
+    throw new GitHubAttachError(
+      "GitHub returned no readable body for the issue or pull request.",
+      "endpoint-changed",
+      current.status,
+      safeDetail(existing),
+    );
+  }
+
+  const response = await githubFetch(
+    target,
+    {
+      method: "PATCH",
+      headers: {
+        ...apiHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ body: joinBody(existingBody, options.body) }),
+      signal: options.signal ?? null,
+    },
+    options.signal,
+    "update the body",
+  );
+
+  if (!response.ok) {
+    throw await responseFailure(response, "body", undefined, options.signal);
+  }
+
+  const updated = await readJson(response, "the issues API", options.signal);
+  if (
+    !isRecord(updated) ||
+    typeof updated.html_url !== "string" ||
+    !isSafeGitHubWebUrl(updated.html_url)
+  ) {
+    throw new GitHubAttachError(
+      "the body was updated but GitHub returned no URL for it.",
+      "endpoint-changed",
+      response.status,
+      safeDetail(updated),
+    );
+  }
+  return updated.html_url;
+}
+
+/** GitHub stores an unset body as null, so appending must not add a blank lead. */
+function joinBody(existing: string | null, addition: string): string {
+  const kept = existing === null ? "" : existing.replace(/\s+$/, "");
+  return kept === "" ? addition : `${kept}\n\n${addition}`;
+}
+
 /** Used by the renderer as a second trust boundary for caller-built Assets. */
 export function isGitHubAssetUrl(url: string): boolean {
   return ASSET_URL.test(url);
@@ -269,8 +378,16 @@ async function readJson(
   }
 }
 
-type Operation = "repository" | "upload" | "comment";
+type Operation = "repository" | "upload" | "comment" | "body";
 type UploadError = { message: string; field?: string };
+
+/** How each operation is named in a failure message. */
+const OPERATION_LABEL: Record<Operation, string> = {
+  repository: "repository lookup",
+  upload: "upload",
+  comment: "comment",
+  body: "body update",
+};
 
 async function responseFailure(
   response: Response,
@@ -283,7 +400,7 @@ async function responseFailure(
   const detail = operation === "upload" ? uploadError.message : readApiError(raw);
   const status = response.status;
   const kind = classifyResponse(response, operation, uploadError.field, detail);
-  const label = operation === "repository" ? "repository lookup" : operation;
+  const label = OPERATION_LABEL[operation];
   const fail = (message: string): GitHubAttachError =>
     new GitHubAttachError(message, kind, status, detail);
 
