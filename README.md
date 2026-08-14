@@ -208,6 +208,13 @@ Verified on 2026-08-09:
 | user-attachments URL in a PR `<video>` | renders a player |
 | Release, raw, or external URL in `<video>` | tag removed |
 
+Verified on 2026-08-14:
+
+| Case | Result |
+|---|---|
+| `PATCH /issues/{N}` on a pull request body | 200, body updated |
+| `--issue N` pointing at a pull request | stops before the write |
+
 Not yet verified: fine-grained PATs, GitHub Enterprise Server, or future
 compatibility of the upload endpoint. Uploading to a private repository was
 verified, but attachment access control outside the uploader's session was not.
