@@ -41,12 +41,33 @@ Releasesへの自動フォールバックは実装しない。Release assetのUR
 ```text
 core     attach(path, { repo, token, name?, contentType?, signal? }) -> Asset
 comment  comment({ repo, issue, body, token, signal? }) -> URL
+append   appendToBody({ repo, issue, body, token, expectPullRequest?, signal? }) -> URL
 render   toMarkdown(asset) -> video HTML または image Markdown
-cli      gh-video-attach <file> --repo owner/name [--issue N | --pr N]
+cli      gh-video-attach <file> --repo owner/name [--issue N | --pr N] [--append-body]
 ```
 
 callerが `repositoryId` を指定する入口は持たない。`repo` から毎回GitHub APIで
 numeric IDを取得し、コメント先とアップロード先が食い違う状態を防ぐ。
+
+## 本文への追記
+
+`appendToBody` はGETで本文を読み、末尾に追記してPATCHで書き戻す。GitHubの
+issue bodyにはETagもversion番号もないため、read-modify-writeの後勝ちになる。
+読み取りと書き込みの間に入った他人の編集は消える。これは既知の制約として
+受け入れ、隠さずREADMEにも書く。複数人が編集する本文にはcommentを使う。
+
+代わりに、書き込んだ結果は検証する。PATCHのresponseに含まれる更新後bodyが
+追記したmarkdownで終わっていなければ `conflict` で失敗させる。追加requestは
+要らず、同時編集を黙って踏み潰したまま成功を返す状態をなくせる。
+
+`--pr N` と `--issue N` はどちらも `/issues/{N}` に落ちる。commentなら取り違えても
+コメントが1件増えるだけだが、本文追記では無関係なobjectを書き換えてしまう。
+GETのresponseの `pull_request` fieldの有無で種別を判定し、`expectPullRequest` と
+食い違えば書き込む前に `invalid-input` で止める。CLIは `--pr` / `--issue` の
+どちらで指定されたかを保持して渡す。
+
+破壊的なPATCHでは `redirect: "error"` にする。repositoryのrename・移管後は
+3xxが返り、fetchはmethodとbodyを保ったまま移管先へ追従するためだ。
 
 トークンは、ライブラリの明示引数、`GH_TOKEN`、`GITHUB_TOKEN`の順に解決する。
 PATH上のhelper programは自動実行しない。CLIにはtokenを値として渡すoptionを置かない。
@@ -83,6 +104,7 @@ filesystem、network、abort、不正なresponse bodyを生の例外として漏
 - `too-large`: local上限またはGitHubのsize上限
 - `upload-unavailable`: 非公開upload endpointの404
 - `endpoint-changed`: response形式または返却URLが契約外
+- `conflict`: responseは読めたが、本文が追記した内容で終わっていない（同時編集）
 - `network` / `aborted` / `server`: transport、cancel、GitHub 5xx
 - `not-found` / `unknown`: 公開REST resourceの404、その他
 
@@ -131,3 +153,8 @@ workflowのOIDCで、package versionと一致するtagだけをpublishする。
 - fine-grained PAT
 - GitHub Enterprise Server
 - user-attachments endpointの将来互換性
+- PR本文への `PATCH /repos/{owner}/{name}/issues/{N}`。GETがPRでも通ることは
+  既知だが、PATCHでPR本文を更新できるかはgithub.comで叩いていない。
+  `--pr N --append-body` はこの前提の上に立っている
+- issue本文への `PATCH /issues/{N}`（テストはすべてmock）
+- 本文の65,536文字上限に到達したときの422 payloadの実際の形
