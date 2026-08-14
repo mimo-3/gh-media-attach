@@ -57,7 +57,7 @@
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
-    "@types/node": "^20.19.43",
+    "@types/node": "^26.2.0",
     "typescript": "^7.0.2"
   }
 }
