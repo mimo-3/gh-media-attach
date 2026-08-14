@@ -52,7 +52,12 @@ gh-video-attach ./demo.mp4 --repo owner/name --url
 
 `--append-body` reads the current body and writes it back with the Markdown
 added at the end. An edit someone else makes between that read and the write is
-overwritten, so prefer a comment on a body several people are editing.
+overwritten, so prefer a comment on a body several people are editing. The
+write is checked afterwards: if the stored body no longer ends with the
+appended Markdown, the CLI reports a `conflict` instead of a success.
+
+A body is capped at 65,536 characters, which repeated appends can reach. GitHub
+answers with HTTP 422 at that point and the reason is included in the error.
 
 Run `gh-video-attach --help` for all options. If an upload succeeds but the
 comment or body update fails, the CLI prints the Markdown to stdout before
@@ -103,12 +108,21 @@ await appendToBody({
   issue: 42,
   body: markdown,
   token,
+  expectPullRequest: true,
 });
 ```
 
 It reads the body and writes the combined text back, so an edit made by someone
 else in between is lost. Existing text is separated from the addition by a
-blank line, and an empty body is replaced by the addition alone.
+blank line, and an empty body is replaced by the addition alone. If the stored
+body does not end with the addition afterwards, it throws `kind: "conflict"`
+rather than reporting success.
+
+Issue 42 and pull request 42 address the same REST endpoint, so a number naming
+the wrong kind of object would rewrite an unrelated body. Pass
+`expectPullRequest` to refuse that: the call stops with `kind: "invalid-input"`
+before writing when the target is not what the caller expected. The CLI sets it
+from whichever of `--pr` or `--issue` was given.
 
 Pass an `AbortSignal` to `attach`, `comment`, or `appendToBody` when the caller
 needs its own timeout or cancellation policy. `toMarkdown` renders supported
@@ -144,9 +158,9 @@ try {
 
 Kinds cover invalid input, local file failures, authentication, rate limits,
 size limits, unavailable or changed upload behavior, networking, cancellation,
-GitHub server failures, missing REST resources, and unknown responses. The
-error also preserves HTTP `status`, a sanitised `detail`, and the original
-`cause` where available.
+GitHub server failures, missing REST resources, concurrent edits, and unknown
+responses. The error also preserves HTTP `status`, a sanitised `detail`, and
+the original `cause` where available.
 
 ## GitHub Actions authentication
 
