@@ -2,6 +2,8 @@ export type Flags = {
   file: string | undefined;
   repo: string | undefined;
   issue: number | undefined;
+  /** True when the number came from `--pr`, false from `--issue`. */
+  targetIsPullRequest: boolean | undefined;
   contentType: string | undefined;
   name: string | undefined;
   appendBody: boolean;
@@ -31,6 +33,7 @@ export function parseArguments(argv: string[]): Flags {
     file: undefined,
     repo: undefined,
     issue: undefined,
+    targetIsPullRequest: undefined,
     contentType: undefined,
     name: undefined,
     appendBody: false,
@@ -76,6 +79,7 @@ export function parseArguments(argv: string[]): Flags {
           throw new Error(`${argument} needs a safe integer, got "${raw}"`);
         }
         flags.issue = issue;
+        flags.targetIsPullRequest = argument === "--pr";
         break;
       }
       case "--content-type":

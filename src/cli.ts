@@ -34,17 +34,20 @@ async function main(): Promise<void> {
   const markdown = toMarkdown(asset);
 
   if (flags.issue !== undefined) {
-    const write = flags.appendBody ? appendToBody : comment;
+    const target = { repo: flags.repo, issue: flags.issue, body: markdown, token, signal };
     try {
       // Appending answers with the issue or pull request URL, commenting with
       // the comment anchor, so the printed URL already names what was written.
-      const writtenUrl = await write({
-        repo: flags.repo,
-        issue: flags.issue,
-        body: markdown,
-        token,
-        signal,
-      });
+      const writtenUrl = flags.appendBody
+        ? await appendToBody({
+            ...target,
+            // Refuse to rewrite an issue body when --pr was asked for, and
+            // the other way round.
+            ...(flags.targetIsPullRequest !== undefined
+              ? { expectPullRequest: flags.targetIsPullRequest }
+              : {}),
+          })
+        : await comment(target);
       process.stdout.write(`${writtenUrl}\n`);
     } catch (error) {
       // The file is already on GitHub. Hand back the markdown so a failed
