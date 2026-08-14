@@ -9,7 +9,7 @@ GitHubのissue・pull request・commentで動画プレイヤーとして表示�
 Release assets、`raw.githubusercontent.com`、外部CDNのURLを `<video>` に指定すると、
 GitHubのMarkdownサニタイザがタグを削除する。
 
-`gh-video-attach` はファイルをGitHubのuser attachmentとしてアップロードし、
+`gh-media-attach` はファイルをGitHubのuser attachmentとしてアップロードし、
 画像と動画に合うMarkdownを返す。ブラウザ、cookie、セッション情報は使わない。
 
 ## 非公開エンドポイントへの依存
@@ -43,7 +43,7 @@ core     attach(path, { repo, token, name?, contentType?, signal? }) -> Asset
 comment  comment({ repo, issue, body, token, signal? }) -> URL
 append   appendToBody({ repo, issue, body, token, expectPullRequest?, signal? }) -> URL
 render   toMarkdown(asset) -> video HTML または image Markdown
-cli      gh-video-attach <file> --repo owner/name [--issue N | --pr N] [--append-body]
+cli      gh-media-attach <file> --repo owner/name [--issue N | --pr N] [--append-body]
 ```
 
 callerが `repositoryId` を指定する入口は持たない。`repo` から毎回GitHub APIで
@@ -150,7 +150,7 @@ workflowのOIDCで、package versionと一致するtagだけをpublishする。
 | PR本文への `PATCH /repos/{owner}/{name}/issues/{N}` | 200、本文が更新される |
 | PRに `--issue N` を指定 | PATCH前に `invalid-input` で中断 |
 
-2026-08-14に mimo-3/gh-video-attach#9 で確認した。`--pr N --append-body` で
+2026-08-14に mimo-3/gh-media-attach#9 で確認した。`--pr N --append-body` で
 `<video>` がPR本文に入り、playerとして表示された。
 
 未検証:

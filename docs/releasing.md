@@ -1,6 +1,6 @@
 # Release procedure
 
-`gh-video-attach` is distributed through npm. Homebrew is not a release target
+`gh-media-attach` is distributed through npm. Homebrew is not a release target
 for the initial version.
 
 ## First release
@@ -16,8 +16,8 @@ the GitHub repository private until the package name has been claimed.
 
    ```bash
    npm install --global npm@^11.15.0
-   npm trust github gh-video-attach \
-     --repo mimo-3/gh-video-attach \
+   npm trust github gh-media-attach \
+     --repo mimo-3/gh-media-attach \
      --file release.yml \
      --environment npm \
      --allow-publish \
@@ -41,3 +41,29 @@ OIDC credentials instead.
 
 The release workflow fails rather than using a long-lived token when trusted
 publishing is unavailable.
+
+## Retiring the old package name
+
+The package was called `gh-video-attach` up to 0.1.0. `gh-media-attach` is a new
+npm name, so it has to be claimed by a publish before a trusted publisher can be
+registered for it, as in [First release](#first-release). The repository is
+already public, so only that ordering still applies.
+
+Once the new release is installable, point the old package at it. `0.1.0` is
+published, so the deprecation notice below is what existing installs will see.
+
+1. Confirm the new package is published: `npm view gh-media-attach version`.
+2. Authenticate the maintainer account with `npm login --auth-type=web`.
+3. Deprecate every published version of the old package:
+
+   ```bash
+   npm deprecate gh-video-attach \
+     "Renamed to gh-media-attach. Install gh-media-attach instead."
+   ```
+
+   Without a version range this covers all versions. Pass a range such as
+   `gh-video-attach@"<=0.1.0"` to limit it.
+4. Confirm the notice is live: `npm view gh-video-attach deprecated`.
+
+Do not unpublish the old package. Unpublishing breaks existing installs, and npm
+does not release the name for reuse afterwards.

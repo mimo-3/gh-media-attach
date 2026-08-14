@@ -11,7 +11,7 @@ export type Flags = {
   help: boolean;
 };
 
-export const USAGE = `gh-video-attach <file> --repo owner/name [options]
+export const USAGE = `gh-media-attach <file> --repo owner/name [options]
 
   --repo owner/name    Repository the attachment belongs to (required)
   --issue N            Post the attachment as a comment on issue N
